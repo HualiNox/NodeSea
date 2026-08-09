@@ -1,1 +1,1 @@
-mod dht;
+pub mod dht;
