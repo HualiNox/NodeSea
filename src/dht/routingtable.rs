@@ -46,6 +46,10 @@ impl RoutingTable {
     /// Returns [`DhtError::Bucket`] containing
     /// [`crate::dht::BucketError::Full`] if the target bucket has reached its
     /// capacity.
+    ///
+    /// Returns [`DhtError::Bucket`] containing
+    /// [`crate::dht::BucketError::NodeAlreadyInBucket`] if the exact node is
+    /// already stored in the target bucket.
     pub fn insert(&mut self, node: Node) -> Result<(), DhtError> {
         let distance = self.local_id.distance(node.id());
         let index = Self::bucket_index(distance)?;
@@ -113,7 +117,7 @@ mod tests {
         let rt = RoutingTable::new(NodeID::random());
         assert_eq!(rt.buckets.len(), BUCKET_COUNT);
         for bucket in &rt.buckets {
-            assert!(bucket.nodes().is_empty());
+            assert!(bucket.nodes().next().is_none());
         }
     }
 
@@ -187,7 +191,7 @@ mod tests {
         id[NODE_ID_BYTES - 1] = 1;
         let result = table.insert(Node::from_id(NodeID::from_id(id), "127.0.0.1".into(), 6881));
         assert!(result.is_ok());
-        assert_eq!(table.buckets[0].nodes().len(), 1);
+        assert_eq!(table.buckets[0].nodes().count(), 1);
     }
 
     #[test]

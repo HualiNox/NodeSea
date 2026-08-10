@@ -6,7 +6,7 @@ pub(crate) const NODE_ID_BYTES: usize = 20;
 /// Metadata for a node in the DHT.
 ///
 /// It contains a NodeID, address, and port number.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Node {
     id: NodeID,
     address: String,

@@ -16,6 +16,10 @@ pub enum BucketError {
     /// The bucket has reached its maximum capacity.
     #[error("bucket is full")]
     Full,
+
+    /// The exact node is already stored in the bucket.
+    #[error("node is already in bucket")]
+    NodeAlreadyInBucket,
 }
 
 /// Errors returned when updating a routing table.
