@@ -32,7 +32,10 @@ impl RoutingTable {
         }
     }
 
-    /// Inserts a node into the routing table.
+    /// Records a node observation in the routing table.
+    ///
+    /// Observing an existing node ID refreshes its endpoint and routing
+    /// metadata without adding another entry.
     ///
     /// # Arguments
     ///
@@ -45,13 +48,10 @@ impl RoutingTable {
     /// the local node.
     ///
     /// Returns [`DhtError::Bucket`] containing
-    /// [`crate::dht::BucketError::Full`] if the target bucket has reached its
-    /// capacity and cannot be split because it does not contain the local
-    /// node ID.
+    /// [`crate::dht::BucketError::Full`] if `node` has a new ID and the target
+    /// bucket has reached its capacity but cannot be split because it does not
+    /// contain the local node ID or has reached the maximum prefix depth.
     ///
-    /// Returns [`DhtError::Bucket`] containing
-    /// [`crate::dht::BucketError::NodeAlreadyInBucket`] if the exact node is
-    /// already stored in the target bucket.
     pub fn insert(&mut self, node: Node) -> Result<(), DhtError> {
         if node.id() == &self.local_id {
             return Err(DhtError::RoutingTable(RoutingTableError::NodeIsSelf));
@@ -64,13 +64,8 @@ impl RoutingTable {
                 .position(|bucket| bucket.contains(node.id()))
                 .expect("every node ID must belong to a bucket");
 
-            match self.buckets[index].add(node.clone()) {
+            match self.buckets[index].observe(node.clone()) {
                 Ok(()) => return Ok(()),
-                Err(crate::dht::BucketError::NodeAlreadyInBucket) => {
-                    return Err(DhtError::Bucket(
-                        crate::dht::BucketError::NodeAlreadyInBucket,
-                    ));
-                }
                 Err(crate::dht::BucketError::Full) => {
                     if !self.buckets[index].contains(&self.local_id)
                         || !self.buckets[index].can_split()

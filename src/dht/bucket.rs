@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::dht::{NODE_ID_BYTES, NodeID, errors::BucketError, node::Node};
+use crate::dht::{
+    NODE_ID_BYTES, NodeID,
+    errors::BucketError,
+    node::{Node, NodeEntry},
+};
 
 /// The maximum number of nodes that can be stored in a bucket.
 pub(crate) const BUCKET_SIZE: usize = 8;
@@ -71,7 +75,7 @@ impl BucketRange {
 #[derive(Clone, Debug)]
 pub(crate) struct Bucket {
     range: BucketRange,
-    node_map: HashMap<NodeID, Node>,
+    node_map: HashMap<NodeID, NodeEntry>,
 }
 
 impl Bucket {
@@ -133,40 +137,33 @@ impl Bucket {
         (zero, one)
     }
 
-    /// Adds a node to the bucket.
+    /// Records a node observation in the bucket.
+    ///
+    /// Observing an existing node ID refreshes its endpoint and routing
+    /// metadata without consuming another bucket slot.
     ///
     /// # Arguments
     ///
-    /// * `node` - The node to add.
+    /// * `node` - The node that was observed.
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the node was added successfully.
+    /// `Ok(())` if the node was added or an existing entry was refreshed.
     ///
     /// # Errors
     ///
-    /// Returns [`BucketError::NodeAlreadyInBucket`] if the same node is
-    /// already stored in the bucket.
-    ///
-    /// A node with an existing identifier but updated endpoint replaces the
-    /// stored node without consuming another bucket slot.
-    ///
-    /// Returns [`BucketError::Full`] if the bucket already contains
-    /// [`BUCKET_SIZE`] different nodes.
-    pub(crate) fn add(&mut self, node: Node) -> Result<(), BucketError> {
+    /// Returns [`BucketError::Full`] if `node` has a new ID and the bucket
+    /// already contains [`BUCKET_SIZE`] different nodes.
+    pub(crate) fn observe(&mut self, node: Node) -> Result<(), BucketError> {
         let node_id = *node.id();
 
-        if let Some(existing) = self.node_map.get(&node_id) {
-            if existing == &node {
-                return Err(BucketError::NodeAlreadyInBucket);
-            }
-
-            self.node_map.insert(node_id, node);
+        if let Some(existing) = self.node_map.get_mut(&node_id) {
+            existing.observe(node);
             return Ok(());
         }
 
         if self.node_map.len() < BUCKET_SIZE {
-            self.node_map.insert(node_id, node);
+            self.node_map.insert(node_id, NodeEntry::new(node));
             Ok(())
         } else {
             Err(BucketError::Full)
@@ -179,7 +176,7 @@ impl Bucket {
     ///
     /// An iterator over the nodes currently stored in the bucket.
     pub(crate) fn nodes(&self) -> impl Iterator<Item = &Node> {
-        self.node_map.values()
+        self.node_map.values().map(NodeEntry::node)
     }
 }
 
@@ -188,10 +185,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add() {
+    fn test_observe_adds_node() {
         let mut bucket = Bucket::new();
         let node = Node::random(String::from("127.0.0.1"), 12400);
-        let result = bucket.add(node);
+        let result = bucket.observe(node);
         assert!(result.is_ok());
         assert_eq!(bucket.nodes().count(), 1);
     }
@@ -205,10 +202,10 @@ mod tests {
         one_id[0] = 0x80;
 
         bucket
-            .add(Node::from_id(NodeID::from_id(zero_id), "a".into(), 1))
+            .observe(Node::from_id(NodeID::from_id(zero_id), "a".into(), 1))
             .unwrap();
         bucket
-            .add(Node::from_id(NodeID::from_id(one_id), "b".into(), 2))
+            .observe(Node::from_id(NodeID::from_id(one_id), "b".into(), 2))
             .unwrap();
 
         let (zero, one) = bucket.split();
@@ -227,7 +224,7 @@ mod tests {
         for p in 0..BUCKET_SIZE {
             let mut id = [0u8; NODE_ID_BYTES];
             id[NODE_ID_BYTES - 1] = p as u8;
-            let result = bucket.add(Node::from_id(
+            let result = bucket.observe(Node::from_id(
                 NodeID::from_id(id),
                 String::from("127.0.0.1"),
                 p as u16,
@@ -237,7 +234,7 @@ mod tests {
         for p in BUCKET_SIZE..2 * BUCKET_SIZE {
             let mut id = [0u8; NODE_ID_BYTES];
             id[NODE_ID_BYTES - 1] = p as u8;
-            let result = bucket.add(Node::from_id(
+            let result = bucket.observe(Node::from_id(
                 NodeID::from_id(id),
                 String::from("127.0.0.1"),
                 p as u16,
@@ -248,18 +245,18 @@ mod tests {
     }
 
     #[test]
-    fn test_add_same_node_id_updates_endpoint() {
+    fn test_observe_same_node_id_updates_endpoint() {
         let mut bucket = Bucket::new();
         let id = NodeID::from_id([0x80; NODE_ID_BYTES]);
 
         assert!(
             bucket
-                .add(Node::from_id(id, "127.0.0.1".into(), 6881))
+                .observe(Node::from_id(id, "127.0.0.1".into(), 6881))
                 .is_ok()
         );
         assert!(
             bucket
-                .add(Node::from_id(id, "127.0.0.2".into(), 6882))
+                .observe(Node::from_id(id, "127.0.0.2".into(), 6882))
                 .is_ok()
         );
 
@@ -271,13 +268,13 @@ mod tests {
     }
 
     #[test]
-    fn test_add_rejects_exact_duplicate() {
+    fn test_observe_exact_duplicate_is_idempotent() {
         let mut bucket = Bucket::new();
         let id = NodeID::from_id([0x80; NODE_ID_BYTES]);
         let node = Node::from_id(id, "127.0.0.1".into(), 6881);
 
-        assert!(bucket.add(node.clone()).is_ok());
-        assert_eq!(bucket.add(node), Err(BucketError::NodeAlreadyInBucket));
+        assert!(bucket.observe(node.clone()).is_ok());
+        assert!(bucket.observe(node).is_ok());
         assert_eq!(bucket.nodes().count(), 1);
     }
 }

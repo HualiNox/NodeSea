@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use rand::RngExt;
 
 /// The number of bytes in a node identifier.
@@ -11,6 +13,17 @@ pub struct Node {
     id: NodeID,
     address: String,
     port: u16,
+}
+
+/// Internal routing metadata for a known node.
+///
+/// In addition to the node's contact information, the entry records when it
+/// was last observed and how many consecutive requests have failed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NodeEntry {
+    node: Node,
+    last_seen: Instant,
+    failures: u8,
 }
 
 /// A 20-byte identifier for a node in the DHT.
@@ -101,6 +114,29 @@ impl Node {
     }
 }
 
+impl NodeEntry {
+    /// Creates a routing entry for a newly observed node.
+    pub(crate) fn new(node: Node) -> Self {
+        Self {
+            node,
+            last_seen: Instant::now(),
+            failures: 0,
+        }
+    }
+
+    /// Refreshes the entry after observing the node again.
+    pub(crate) fn observe(&mut self, node: Node) {
+        self.node = node;
+        self.last_seen = Instant::now();
+        self.failures = 0;
+    }
+
+    /// Returns the node contact information.
+    pub(crate) fn node(&self) -> &Node {
+        &self.node
+    }
+}
+
 impl NodeID {
     /// Creates a randomly generated node identifier.
     ///
@@ -187,5 +223,20 @@ mod tests {
         let id2 = NodeID(data);
 
         assert_eq!(id1.distance(&id2), data);
+    }
+
+    #[test]
+    fn test_node_entry_observe_refreshes_node_metadata() {
+        let id = NodeID::from_id([0; NODE_ID_BYTES]);
+        let mut entry = NodeEntry::new(Node::from_id(id, "127.0.0.1".into(), 6881));
+        let previous_last_seen = entry.last_seen;
+        entry.failures = 1;
+
+        entry.observe(Node::from_id(id, "127.0.0.2".into(), 6882));
+
+        assert_eq!(entry.node().address(), "127.0.0.2");
+        assert_eq!(entry.node().port(), 6882);
+        assert!(entry.last_seen >= previous_last_seen);
+        assert_eq!(entry.failures, 0);
     }
 }

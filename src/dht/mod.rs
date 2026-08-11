@@ -15,7 +15,7 @@ pub use errors::{BucketError, DhtError, RoutingTableError};
 pub use node::{Node, NodeID};
 pub use routingtable::RoutingTable;
 
-/// Represents a DHT node that manages routing and bucket updates.
+/// Represents a local DHT node and its routing table.
 pub struct DhtNode {
     local: Node,
     routing_table: RoutingTable,
@@ -67,7 +67,10 @@ impl DhtNode {
         &self.routing_table
     }
 
-    /// Inserts a node into the routing table.
+    /// Records a node observation in the routing table.
+    ///
+    /// Observing an existing node ID refreshes its endpoint and routing
+    /// metadata without adding another entry.
     ///
     /// # Arguments
     ///
@@ -79,12 +82,9 @@ impl DhtNode {
     /// [`RoutingTableError::NodeIsSelf`] if `node` is the local node.
     ///
     /// Returns [`DhtError::Bucket`] containing
-    /// [`crate::dht::BucketError::Full`] if the target bucket has reached its
-    /// capacity.
+    /// [`crate::dht::BucketError::Full`] if `node` has a new ID and the target
+    /// bucket has reached its capacity but cannot be split.
     ///
-    /// Returns [`DhtError::Bucket`] containing
-    /// [`crate::dht::BucketError::NodeAlreadyInBucket`] if the exact node is
-    /// already stored in the target bucket.
     pub fn insert(&mut self, node: Node) -> Result<(), DhtError> {
         self.routing_table.insert(node)?;
         Ok(())
