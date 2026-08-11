@@ -2,14 +2,75 @@ use std::collections::HashMap;
 
 use crate::dht::{NODE_ID_BYTES, NodeID, errors::BucketError, node::Node};
 
-/// The number of buckets in the routing table.
-pub(crate) const BUCKET_COUNT: usize = NODE_ID_BYTES * 8;
 /// The maximum number of nodes that can be stored in a bucket.
-pub(crate) const BUCKET_SIZE: usize = 20;
+pub(crate) const BUCKET_SIZE: usize = 8;
 
-/// Stores nodes belonging to one XOR-distance range in a routing table.
+#[derive(Clone, Debug)]
+pub(crate) struct BucketRange {
+    prefix: [u8; NODE_ID_BYTES],
+    depth: u8,
+}
+
+impl BucketRange {
+    /// Creates the root range, which contains every possible node ID.
+    fn root() -> Self {
+        Self {
+            prefix: [0; NODE_ID_BYTES],
+            depth: 0,
+        }
+    }
+
+    /// Returns whether `id` shares this range's prefix.
+    ///
+    /// Node IDs are compared from the most significant bit to the least
+    /// significant bit. For each prefix bit, the byte index and the bit index
+    /// within that byte are calculated first. The selected bit is then moved
+    /// to the least significant position and masked with `1` to obtain either
+    /// `0` or `1`.
+    ///
+    /// A root range has a depth of zero, so it has no prefix bits to compare
+    /// and therefore contains every node ID.
+    fn contains(&self, id: &NodeID) -> bool {
+        for bit_position in 0..self.depth as usize {
+            // Eight bits make up one byte; NodeID prefixes are read in
+            // big-endian bit order, from bit 7 down to bit 0.
+            let byte_position = bit_position / 8;
+            let bit_in_byte = 7 - bit_position % 8;
+
+            // Shift the selected bit to position 0, then keep only that bit.
+            let prefix_bit = (self.prefix[byte_position] >> bit_in_byte) & 1;
+            let id_bit = (id.node_id()[byte_position] >> bit_in_byte) & 1;
+
+            if prefix_bit != id_bit {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Creates the child range whose next prefix bit is `bit`.
+    fn child(&self, bit: u8) -> Self {
+        let mut prefix = self.prefix;
+        let bit_position = self.depth as usize;
+        let byte_position = bit_position / 8;
+        let bit_in_byte = 7 - bit_position % 8;
+        let mask = 1 << bit_in_byte;
+
+        prefix[byte_position] &= !mask;
+        prefix[byte_position] |= bit << bit_in_byte;
+
+        Self {
+            prefix,
+            depth: self.depth + 1,
+        }
+    }
+}
+
+/// Stores nodes whose IDs belong to one prefix range in the routing table.
 #[derive(Clone, Debug)]
 pub(crate) struct Bucket {
+    range: BucketRange,
     node_map: HashMap<NodeID, Node>,
 }
 
@@ -21,6 +82,7 @@ impl Bucket {
     /// A new `Bucket` instance with no nodes.
     pub(crate) fn new() -> Self {
         Self {
+            range: BucketRange::root(),
             node_map: HashMap::new(),
         }
     }
@@ -29,9 +91,46 @@ impl Bucket {
     ///
     /// # Returns
     ///
-    /// A vector of empty `Bucket` instances.
+    /// A vector containing the initial root bucket.
     pub(crate) fn new_bucket_collection() -> Vec<Bucket> {
-        vec![Bucket::new(); BUCKET_COUNT]
+        vec![Bucket::new()]
+    }
+
+    /// Returns whether the node ID belongs to this bucket's range.
+    pub(crate) fn contains(&self, id: &NodeID) -> bool {
+        self.range.contains(id)
+    }
+
+    /// Returns whether this bucket can be split into two child ranges.
+    pub(crate) fn can_split(&self) -> bool {
+        (self.range.depth as usize) < NODE_ID_BYTES * 8
+    }
+
+    /// Splits this bucket into a `0` child and a `1` child.
+    ///
+    /// Existing nodes are redistributed according to the next bit after the
+    /// current range prefix.
+    pub(crate) fn split(self) -> (Bucket, Bucket) {
+        let zero_range = self.range.child(0);
+        let one_range = self.range.child(1);
+        let mut zero = Bucket {
+            range: zero_range,
+            node_map: HashMap::new(),
+        };
+        let mut one = Bucket {
+            range: one_range,
+            node_map: HashMap::new(),
+        };
+
+        for (id, node) in self.node_map {
+            if zero.contains(&id) {
+                zero.node_map.insert(id, node);
+            } else {
+                one.node_map.insert(id, node);
+            }
+        }
+
+        (zero, one)
     }
 
     /// Adds a node to the bucket.
@@ -95,6 +194,31 @@ mod tests {
         let result = bucket.add(node);
         assert!(result.is_ok());
         assert_eq!(bucket.nodes().count(), 1);
+    }
+
+    #[test]
+    fn test_range_split_distributes_nodes_by_next_bit() {
+        let mut bucket = Bucket::new();
+        let mut zero_id = [0u8; NODE_ID_BYTES];
+        zero_id[0] = 0x01;
+        let mut one_id = [0u8; NODE_ID_BYTES];
+        one_id[0] = 0x80;
+
+        bucket
+            .add(Node::from_id(NodeID::from_id(zero_id), "a".into(), 1))
+            .unwrap();
+        bucket
+            .add(Node::from_id(NodeID::from_id(one_id), "b".into(), 2))
+            .unwrap();
+
+        let (zero, one) = bucket.split();
+
+        assert!(zero.contains(&NodeID::from_id(zero_id)));
+        assert!(!zero.contains(&NodeID::from_id(one_id)));
+        assert!(one.contains(&NodeID::from_id(one_id)));
+        assert!(!one.contains(&NodeID::from_id(zero_id)));
+        assert_eq!(zero.nodes().count(), 1);
+        assert_eq!(one.nodes().count(), 1);
     }
 
     #[test]

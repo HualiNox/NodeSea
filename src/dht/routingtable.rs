@@ -1,13 +1,14 @@
-use crate::dht::{BUCKET_COUNT, DhtError, NODE_ID_BYTES, RoutingTableError, node::Node};
+use crate::dht::{DhtError, RoutingTableError, node::Node};
 
 use super::{bucket::Bucket, node::NodeID};
 
 /// The routing table for a node in the DHT.
 ///
-/// The table contains 160 buckets. Each bucket represents one range of XOR
-/// distances from the local node identifier.
+/// The table starts with one bucket covering the entire node ID space. A full
+/// bucket that contains the local node ID is split into two child ranges.
 ///
-/// Each bucket contains the nodes whose identifiers fall within that range.
+/// Each bucket contains the nodes whose identifiers fall within its prefix
+/// range.
 #[derive(Debug)]
 pub struct RoutingTable {
     local_id: NodeID,
@@ -23,7 +24,7 @@ impl RoutingTable {
     ///
     /// # Returns
     ///
-    /// A routing table containing 160 empty buckets.
+    /// A routing table containing one empty root bucket.
     pub fn new(local_id: NodeID) -> Self {
         Self {
             local_id,
@@ -45,40 +46,45 @@ impl RoutingTable {
     ///
     /// Returns [`DhtError::Bucket`] containing
     /// [`crate::dht::BucketError::Full`] if the target bucket has reached its
-    /// capacity.
+    /// capacity and cannot be split because it does not contain the local
+    /// node ID.
     ///
     /// Returns [`DhtError::Bucket`] containing
     /// [`crate::dht::BucketError::NodeAlreadyInBucket`] if the exact node is
     /// already stored in the target bucket.
     pub fn insert(&mut self, node: Node) -> Result<(), DhtError> {
-        let distance = self.local_id.distance(node.id());
-        let index = Self::bucket_index(distance)?;
-
-        self.buckets[index].add(node)?;
-
-        Ok(())
-    }
-
-    /// Maps a non-zero XOR distance to its bucket index.
-    ///
-    /// # Arguments
-    ///
-    /// * `distance` - A 20-byte XOR distance from the local node.
-    ///
-    /// # Returns
-    ///
-    /// The index of the bucket corresponding to the distance.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`DhtError::RoutingTable`] containing
-    /// [`RoutingTableError::NodeIsSelf`] if the distance is zero.
-    fn bucket_index(distance: [u8; NODE_ID_BYTES]) -> Result<usize, DhtError> {
-        let Some((i, byte)) = distance.iter().enumerate().find(|(_, b)| **b != 0) else {
+        if node.id() == &self.local_id {
             return Err(DhtError::RoutingTable(RoutingTableError::NodeIsSelf));
-        };
+        }
 
-        Ok(BUCKET_COUNT - 1 - (i * 8 + byte.leading_zeros() as usize))
+        loop {
+            let index = self
+                .buckets
+                .iter()
+                .position(|bucket| bucket.contains(node.id()))
+                .expect("every node ID must belong to a bucket");
+
+            match self.buckets[index].add(node.clone()) {
+                Ok(()) => return Ok(()),
+                Err(crate::dht::BucketError::NodeAlreadyInBucket) => {
+                    return Err(DhtError::Bucket(
+                        crate::dht::BucketError::NodeAlreadyInBucket,
+                    ));
+                }
+                Err(crate::dht::BucketError::Full) => {
+                    if !self.buckets[index].contains(&self.local_id)
+                        || !self.buckets[index].can_split()
+                    {
+                        return Err(DhtError::Bucket(crate::dht::BucketError::Full));
+                    }
+
+                    let bucket = self.buckets.remove(index);
+                    let (zero, one) = bucket.split();
+                    self.buckets.insert(index, one);
+                    self.buckets.insert(index, zero);
+                }
+            }
+        }
     }
 
     /// Returns the closest nodes to a target identifier.
@@ -108,39 +114,17 @@ impl RoutingTable {
 
 #[cfg(test)]
 mod tests {
-    use crate::dht::{BucketError, bucket::BUCKET_SIZE};
+    use crate::dht::{BucketError, NODE_ID_BYTES, bucket::BUCKET_SIZE};
 
     use super::*;
 
     #[test]
     fn test_new() {
-        let rt = RoutingTable::new(NodeID::random());
-        assert_eq!(rt.buckets.len(), BUCKET_COUNT);
-        for bucket in &rt.buckets {
-            assert!(bucket.nodes().next().is_none());
-        }
-    }
-
-    #[test]
-    fn test_bucket_index() {
-        let distance = [0u8; NODE_ID_BYTES];
-        assert_eq!(
-            RoutingTable::bucket_index(distance),
-            Err(DhtError::RoutingTable(RoutingTableError::NodeIsSelf))
-        );
-
-        for bit_position in 0..BUCKET_COUNT {
-            let mut distance = [0u8; NODE_ID_BYTES];
-            let byte_position = bit_position / 8;
-            let bit_in_byte = bit_position % 8;
-            distance[byte_position] = 1 << (7 - bit_in_byte);
-
-            assert_eq!(
-                RoutingTable::bucket_index(distance),
-                Ok(BUCKET_COUNT - 1 - bit_position),
-                "unexpected bucket for bit position {bit_position}"
-            );
-        }
+        let local = NodeID::random();
+        let rt = RoutingTable::new(local);
+        assert_eq!(rt.buckets.len(), 1);
+        assert!(rt.buckets[0].contains(&local));
+        assert!(rt.buckets[0].nodes().next().is_none());
     }
 
     #[test]
@@ -178,6 +162,42 @@ mod tests {
         assert_eq!(
             table.insert(Node::from_id(NodeID::from_id(id), "a".into(), 6881)),
             Err(DhtError::Bucket(BucketError::Full))
+        );
+    }
+
+    #[test]
+    fn test_full_bucket_containing_local_id_is_split() {
+        let local = NodeID::from_id([0u8; 20]);
+        let mut table = RoutingTable::new(local);
+
+        for value in 0..BUCKET_SIZE - 1 {
+            let mut id = [0u8; 20];
+            id[0] = 0x80;
+            id[19] = value as u8;
+            table
+                .insert(Node::from_id(NodeID::from_id(id), "a".into(), 6881))
+                .unwrap();
+        }
+
+        let mut left_id = [0u8; 20];
+        left_id[19] = 1;
+        table
+            .insert(Node::from_id(NodeID::from_id(left_id), "b".into(), 6882))
+            .unwrap();
+
+        let mut new_id = [0u8; 20];
+        new_id[0] = 0x80;
+        new_id[19] = 100;
+        table
+            .insert(Node::from_id(NodeID::from_id(new_id), "c".into(), 6883))
+            .unwrap();
+
+        assert_eq!(table.buckets.len(), 2);
+        assert!(
+            table
+                .buckets
+                .iter()
+                .all(|bucket| bucket.nodes().count() <= BUCKET_SIZE)
         );
     }
 

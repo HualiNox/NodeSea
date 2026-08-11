@@ -9,7 +9,6 @@ mod errors;
 mod node;
 mod routingtable;
 
-pub(crate) use bucket::BUCKET_COUNT;
 pub(crate) use node::NODE_ID_BYTES;
 
 pub use errors::{BucketError, DhtError, RoutingTableError};
