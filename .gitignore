@@ -3,8 +3,15 @@
 
 # ide
 .idea
-.zed
+crates/*/.zed/generated
+crates/*/.generated
 .vscode
+.zed
+
+# cache
+.cache
+compile_commands.json
 
 # Build output
 /target
+**/generated

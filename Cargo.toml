@@ -1,8 +1,25 @@
 [package]
 name = "nodesea"
-version = "0.1.0"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+authors = [
+    "HualiNox",
+]
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/nodesea-bt"
+]
+
+[workspace.package]
+version = "0.0.1"
+authors = [
+    "HualiNox",
+]
+license = "MIT"
 edition = "2024"
 
-[dependencies]
-rand = "0.10.2"
-thiserror = "2.0.20"
+[workspace.dependencies]
+anyhow = "1"

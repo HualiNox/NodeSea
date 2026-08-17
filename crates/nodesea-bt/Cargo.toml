@@ -1,0 +1,22 @@
+[package]
+name = "nodesea-bt"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+cxx = "1.0.199"
+hex = "0.4.3"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "event_sink"
+harness = false
+
+[build-dependencies]
+cmake = "0.1.58"
+cxx-build = "1.0.199"
