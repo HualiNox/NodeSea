@@ -81,6 +81,8 @@ mod bridge {
     /// Payload for DHT statistics.
     pub(crate) struct DhtStatsPayload {
         node_count: u32,
+        local_ip: String,
+        local_port: u16,
     }
 
     /// Payload for a DHT get peers alert.
@@ -144,6 +146,8 @@ impl FfiEventSink {
     fn on_dht_stats(&mut self, event: bridge::DhtStatsPayload) {
         self.emit(BtEvent::DhtStats {
             node_count: event.node_count,
+            local_ip: event.local_ip,
+            local_port: event.local_port,
         });
     }
 

@@ -40,6 +40,10 @@ pub enum BtEvent {
     DhtStats {
         /// Number of nodes currently present in the DHT routing table.
         node_count: u32,
+        /// Local IP address used for DHT operations.
+        local_ip: String,
+        /// Local port used for DHT operations.
+        local_port: u16,
     },
 
     /// The DHT bootstrap process has completed.
@@ -538,7 +542,11 @@ mod tests {
                 info_hash,
                 message: "fetch failed".to_string(),
             },
-            BtEvent::DhtStats { node_count: 128 },
+            BtEvent::DhtStats {
+                node_count: 128,
+                local_ip: "127.0.0.1".to_string(),
+                local_port: 6881,
+            },
             BtEvent::DhtBootstrap,
             BtEvent::DhtGetPeers { info_hash },
             BtEvent::AddTorrent {

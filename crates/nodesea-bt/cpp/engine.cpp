@@ -148,12 +148,18 @@ std::size_t Engine::poll_events(FfiEventSink &sink) {
     case lt::dht_stats_alert::alert_type: {
       auto *a = static_cast<lt::dht_stats_alert *>(alert);
       std::uint32_t total = 0;
+
       for (const auto &bucket : a->routing_table) {
         total += static_cast<std::uint32_t>(bucket.num_nodes);
       }
-      DhtStatsPayload event;
-      event.node_count = total;
-      sink.on_dht_stats(std::move(event));
+
+      auto ip = a->local_endpoint.address().to_string();
+      sink.on_dht_stats(DhtStatsPayload{
+          .node_count = total,
+          .local_ip = rust::String(ip.data(), ip.size()),
+          .local_port = static_cast<std::uint16_t>(a->local_endpoint.port()),
+      });
+
       ++dispatched;
       break;
     }
