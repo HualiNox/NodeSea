@@ -19,7 +19,7 @@ bool is_port_available(uint16_t port) {
   addr.sin_addr.s_addr = INADDR_ANY;
   addr.sin_port = htons(port);
 
-  int res = ::bind(sock, reinterpret_cast<const struct sockaddr *>(&addr), sizeof(addr));
+  int res = ::bind(sock, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr));
   ::close(sock);
 
   return res == 0;

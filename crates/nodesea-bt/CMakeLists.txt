@@ -63,7 +63,7 @@ file(
 )
 
 foreach(BOOST_INCLUDE_DIR IN LISTS BOOST_INCLUDE_DIRS)
-    install(
+  install(
         DIRECTORY "${BOOST_INCLUDE_DIR}/"
         DESTINATION include
     )
