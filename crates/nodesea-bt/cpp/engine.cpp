@@ -24,6 +24,10 @@
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
 
+// ----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+
 // Default listening port for BitTorrent connections.
 constexpr std::uint16_t DEFAULT_PORT = 6881;
 
@@ -33,6 +37,14 @@ constexpr std::uint16_t RANDOM_PORT = 0;
 // Format string for listening interfaces: IPv4 and IPv6 addresses.
 constexpr std::string_view LISTEN_ADDR_FORMAT = "0.0.0.0:{0},[::]:{0}";
 
+// DHT bootstrap nodes for peer discovery.
+constexpr std::string_view DHT_BOOTSTRAP_NODES = "dht.libtorrent.org:25401,"
+                                                 "router.bittorrent.com:6881,"
+                                                 "dht.transmissionbt.com:6881";
+
+// ----------------------------------------------------------------------------
+// Engine Implementation
+// -----------------------------------------------------------------------------
 namespace lt = libtorrent;
 
 namespace nodesea::bt {
@@ -61,6 +73,10 @@ Engine::Engine() : impl_(std::make_unique<Impl>()) {
     sp.set_str(lt::settings_pack::listen_interfaces,
                std::format(LISTEN_ADDR_FORMAT, RANDOM_PORT));
   }
+
+  // Configure DHT bootstrap nodes.
+  sp.set_str(lt::settings_pack::dht_bootstrap_nodes,
+             std::string(DHT_BOOTSTRAP_NODES));
 
   // Start the session.
   impl_->session_ = std::make_unique<lt::session>(std::move(sp));
