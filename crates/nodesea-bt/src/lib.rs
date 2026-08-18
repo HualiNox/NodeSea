@@ -589,9 +589,28 @@ mod tests {
 
     #[test]
     fn test_engine_poll_events_with_collector() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
         let mut engine = Engine::new().expect("Engine should initialize");
         let mut collector = EventCollector::with_capacity(16);
-        let count = engine.poll_events(&mut collector);
-        assert_eq!(count, collector.events().len());
+
+        assert!(engine.post_dht_stats());
+
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() <= deadline {
+            engine.poll_events(&mut collector);
+
+            if collector
+                .events()
+                .iter()
+                .any(|e| matches!(e, BtEvent::DhtStats { .. }))
+            {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        panic!("DhtStats event was not received before timeout");
     }
 }
