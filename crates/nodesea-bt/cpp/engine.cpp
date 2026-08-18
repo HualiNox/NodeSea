@@ -102,13 +102,14 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     // DHT announce alert.
     case lt::dht_announce_alert::alert_type: {
       auto* a = static_cast<lt::dht_announce_alert*>(alert);
-      auto hash = digest_to_array(a->info_hash);
+
       std::string ip = a->ip.to_string();
-      DhtAnnouncePayload event;
-      event.info_hash = hash;
-      event.peer_ip = rust::String(ip.data(), ip.size());
-      event.peer_port = static_cast<std::uint16_t>(a->port);
-      sink.on_dht_announce(std::move(event));
+      sink.on_dht_announce(DhtAnnouncePayload{
+          .info_hash = digest_to_array(a->info_hash),
+          .peer_ip = rust::String(ip.data(), ip.size()),
+          .peer_port = static_cast<std::uint16_t>(a->port),
+      });
+
       ++dispatched;
       break;
     }
@@ -116,19 +117,22 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     // Metadata received alert.
     case lt::metadata_received_alert::alert_type: {
       auto* a = static_cast<lt::metadata_received_alert*>(alert);
-      auto hash = digest_to_array(a->handle.info_hash());
 
+      auto hash = digest_to_array(a->handle.info_hash());
       auto torrent_file = a->handle.torrent_file();
-      MetadataReceivedPayload event;
-      event.info_hash = hash;
+      rust::Vec<std::uint8_t> data;
       if (torrent_file && torrent_file->is_valid()) {
         lt::span<char const> info_section = torrent_file->info_section();
-        event.data.reserve(info_section.size());
+        data.reserve(info_section.size());
         for (char byte : info_section) {
-          event.data.push_back(static_cast<std::uint8_t>(byte));
+          data.push_back(static_cast<std::uint8_t>(byte));
         }
       }
-      sink.on_metadata_received(std::move(event));
+      sink.on_metadata_received(MetadataReceivedPayload{
+          .info_hash = hash,
+          .data = data,
+      });
+
       ++dispatched;
 
       // Clean up the fetch entry.
@@ -141,12 +145,12 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     // Metadata failed alert.
     case lt::metadata_failed_alert::alert_type: {
       auto* a = static_cast<lt::metadata_failed_alert*>(alert);
-      auto hash = digest_to_array(a->handle.info_hash());
-      std::string msg = a->message();
-      InfoMessagePayload event;
-      event.info_hash = hash;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_metadata_failed(std::move(event));
+
+      sink.on_metadata_failed(InfoMessagePayload{
+          .info_hash = digest_to_array(a->handle.info_hash()),
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
 
       // Don't clean up the fetch entry here. A metadata_failed_alert represents
@@ -185,7 +189,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::dht_get_peers_alert::alert_type: {
       auto* a = static_cast<lt::dht_get_peers_alert*>(alert);
 
-      sink.on_dht_get_peers(DhtGetPeersPayload{.info_hash = digest_to_array(a->info_hash)});
+      sink.on_dht_get_peers(DhtGetPeersPayload{
+          .info_hash = digest_to_array(a->info_hash),
+      });
+
       ++dispatched;
 
       break;
@@ -194,118 +201,131 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     // Session error alert.
     case lt::session_error_alert::alert_type: {
       auto* a = static_cast<lt::session_error_alert*>(alert);
-      std::string msg = a->message();
-      MessagePayload event;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_session_error(std::move(event));
+
+      sink.on_session_error(MessagePayload{
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // Listen failed alert.
     case lt::listen_failed_alert::alert_type: {
       auto* a = static_cast<lt::listen_failed_alert*>(alert);
-      std::string msg = a->message();
-      MessagePayload event;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_listen_failed(std::move(event));
+
+      sink.on_listen_failed(MessagePayload{
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // UDP error alert.
     case lt::udp_error_alert::alert_type: {
       auto* a = static_cast<lt::udp_error_alert*>(alert);
-      std::string msg = a->message();
-      MessagePayload event;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_udp_error(std::move(event));
+
+      sink.on_udp_error(MessagePayload{
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // DHT error alert.
     case lt::dht_error_alert::alert_type: {
       auto* a = static_cast<lt::dht_error_alert*>(alert);
-      std::string msg = a->message();
-      MessagePayload event;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_dht_error(std::move(event));
+
+      sink.on_dht_error(MessagePayload{
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // Alerts dropped alert.
     case lt::alerts_dropped_alert::alert_type: {
       auto* a = static_cast<lt::alerts_dropped_alert*>(alert);
-      std::string msg = a->message();
-      MessagePayload event;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_alerts_dropped(std::move(event));
+
+      sink.on_alerts_dropped(MessagePayload{
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // Add torrent alert.
     case lt::add_torrent_alert::alert_type: {
       auto* a = static_cast<lt::add_torrent_alert*>(alert);
-      auto hash = digest_to_array(a->params.info_hashes.get_best());
-      std::string msg = a->message();
 
+      auto hash = digest_to_array(a->params.info_hashes.get_best());
       if (a->error == lt::errors::no_error) {
-        InfoMessagePayload event;
-        event.info_hash = hash;
-        event.message = rust::String(msg.data(), msg.size());
-        sink.on_add_torrent(std::move(event));
+        sink.on_add_torrent(InfoMessagePayload{
+            .info_hash = hash,
+            .message = rust::String(a->message().data(), a->message().size()),
+        });
       } else {
-        AddTorrentErrorPayload event;
-        event.info_hash = hash;
-        event.message = rust::String(msg.data(), msg.size());
-        event.error_value = static_cast<std::int32_t>(a->error.value());
-        const char* cat_name = a->error.category().name();
-        event.error_category = rust::String(cat_name);
-        sink.on_add_torrent_error(std::move(event));
+        sink.on_add_torrent_error(AddTorrentErrorPayload{
+            .info_hash = hash,
+            .message = rust::String(a->message().data(), a->message().size()),
+            .error_value = static_cast<std::int32_t>(a->error.value()),
+            .error_category = rust::String(a->error.category().name()),
+        });
       }
+
       ++dispatched;
+
       break;
     }
 
     // Torrent error alert.
     case lt::torrent_error_alert::alert_type: {
       auto* a = static_cast<lt::torrent_error_alert*>(alert);
-      auto hash = digest_to_array(a->handle.info_hash());
-      std::string msg = a->message();
-      InfoMessagePayload event;
-      event.info_hash = hash;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_torrent_error(std::move(event));
+
+      sink.on_torrent_error(InfoMessagePayload{
+          .info_hash = digest_to_array(a->handle.info_hash()),
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // File error alert.
     case lt::file_error_alert::alert_type: {
       auto* a = static_cast<lt::file_error_alert*>(alert);
-      auto hash = digest_to_array(a->handle.info_hash());
-      std::string msg = a->message();
-      InfoMessagePayload event;
-      event.info_hash = hash;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_file_error(std::move(event));
+
+      sink.on_file_error(InfoMessagePayload{
+          .info_hash = digest_to_array(a->handle.info_hash()),
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
     // Torrent delete failed alert.
     case lt::torrent_delete_failed_alert::alert_type: {
       auto* a = static_cast<lt::torrent_delete_failed_alert*>(alert);
-      auto hash = digest_to_array(a->handle.info_hash());
-      std::string msg = a->message();
-      InfoMessagePayload event;
-      event.info_hash = hash;
-      event.message = rust::String(msg.data(), msg.size());
-      sink.on_torrent_delete_failed(std::move(event));
+
+      sink.on_torrent_delete_failed(InfoMessagePayload{
+          .info_hash = digest_to_array(a->handle.info_hash()),
+          .message = rust::String(a->message().data(), a->message().size()),
+      });
+
       ++dispatched;
+
       break;
     }
 
