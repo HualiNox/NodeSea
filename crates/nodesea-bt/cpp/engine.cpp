@@ -132,10 +132,8 @@ std::size_t Engine::poll_events(FfiEventSink &sink) {
       sink.on_metadata_failed(std::move(event));
       ++dispatched;
 
-      // Clean up the fetch entry.
-      std::string key(reinterpret_cast<const char *>(hash.data()), 20);
-      impl_->session_->remove_torrent(a->handle);
-      impl_->archive_fetches_.erase(key);
+      // Don't clean up the fetch entry here. A metadata_failed_alert represents
+      // a failed metadata attempt, and libtorrent may retry the retrieval.
       break;
     }
 
