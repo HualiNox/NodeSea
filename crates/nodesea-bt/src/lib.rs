@@ -468,10 +468,130 @@ mod tests {
     }
 
     #[test]
-    fn test_event_collector_sink() {
-        let mut collector = EventCollector::with_capacity(1);
-        collector.on_event(BtEvent::DhtBootstrap);
+    fn test_info_hash_default_and_order() {
+        let default_hash = InfoHash::default();
+        assert_eq!(default_hash.as_bytes(), &[0u8; 20]);
+        assert_eq!(default_hash, InfoHash::from_bytes([0u8; 20]));
 
-        assert_eq!(collector.events(), &[BtEvent::DhtBootstrap]);
+        let hash_a = InfoHash::from_bytes([1u8; 20]);
+        let hash_b = InfoHash::from_bytes([2u8; 20]);
+        assert!(hash_a < hash_b);
+        assert_eq!(hash_a.as_ref(), &[1u8; 20]);
+
+        // Test TryFrom slice error on invalid length
+        let invalid_slice = [0u8; 19];
+        assert!(InfoHash::try_from(&invalid_slice[..]).is_err());
+    }
+
+    #[test]
+    fn test_event_collector_sink() {
+        let mut collector = EventCollector::new();
+        assert!(collector.events().is_empty());
+
+        let info_hash = InfoHash::from_bytes([0xab; 20]);
+        let get_peers_event = BtEvent::DhtGetPeers { info_hash };
+        let announce_event = BtEvent::DhtAnnounce {
+            info_hash,
+            peer_ip: "127.0.0.1".to_string(),
+            peer_port: 6881,
+        };
+
+        collector.on_event(BtEvent::DhtBootstrap);
+        collector.on_event(get_peers_event.clone());
+        collector.on_event(announce_event.clone());
+
+        assert_eq!(collector.events().len(), 3);
+        assert_eq!(
+            collector.events(),
+            &[
+                BtEvent::DhtBootstrap,
+                get_peers_event.clone(),
+                announce_event.clone(),
+            ]
+        );
+
+        let taken = collector.take_events();
+        assert_eq!(taken.len(), 3);
+        assert!(collector.events().is_empty());
+
+        collector.on_event(get_peers_event);
+        assert_eq!(collector.events().len(), 1);
+        collector.clear();
+        assert!(collector.events().is_empty());
+    }
+
+    #[test]
+    fn test_bt_event_variants() {
+        let info_hash = InfoHash::from_bytes([0x42; 20]);
+
+        let events = vec![
+            BtEvent::DhtAnnounce {
+                info_hash,
+                peer_ip: "10.0.0.1".to_string(),
+                peer_port: 8080,
+            },
+            BtEvent::MetadataReceived {
+                info_hash,
+                data: vec![1, 2, 3],
+            },
+            BtEvent::MetadataFailed {
+                info_hash,
+                message: "fetch failed".to_string(),
+            },
+            BtEvent::DhtStats { node_count: 128 },
+            BtEvent::DhtBootstrap,
+            BtEvent::DhtGetPeers { info_hash },
+            BtEvent::AddTorrent {
+                info_hash,
+                message: "torrent added".to_string(),
+            },
+            BtEvent::AddTorrentError {
+                info_hash,
+                message: "add failed".to_string(),
+                error_value: 1,
+                error_category: "libtorrent".to_string(),
+            },
+            BtEvent::TorrentError {
+                info_hash,
+                message: "torrent error".to_string(),
+            },
+            BtEvent::FileError {
+                info_hash,
+                message: "file error".to_string(),
+            },
+            BtEvent::TorrentDeleteFailed {
+                info_hash,
+                message: "delete failed".to_string(),
+            },
+            BtEvent::SessionError {
+                message: "session error".to_string(),
+            },
+            BtEvent::ListenFailed {
+                message: "listen error".to_string(),
+            },
+            BtEvent::UdpError {
+                message: "udp error".to_string(),
+            },
+            BtEvent::DhtError {
+                message: "dht error".to_string(),
+            },
+            BtEvent::AlertsDropped {
+                message: "dropped alerts".to_string(),
+            },
+        ];
+
+        for event in events {
+            let cloned = event.clone();
+            assert_eq!(event, cloned);
+            assert!(!format!("{event:?}").is_empty());
+        }
+    }
+
+    #[test]
+    fn test_engine_poll_events_with_collector() {
+        let mut engine = Engine::new().expect("Engine should initialize");
+        let mut collector = EventCollector::with_capacity(16);
+        let count = engine.poll_events(&mut collector);
+        assert_eq!(count, collector.events().len());
     }
 }
