@@ -103,10 +103,9 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::dht_announce_alert::alert_type: {
       auto* a = static_cast<lt::dht_announce_alert*>(alert);
 
-      std::string ip = a->ip.to_string();
       sink.on_dht_announce(DhtAnnouncePayload{
           .info_hash = digest_to_array(a->info_hash),
-          .peer_ip = rust::String(ip.data(), ip.size()),
+          .peer_ip = rust::String(a->ip.to_string()),
           .peer_port = static_cast<std::uint16_t>(a->port),
       });
 
@@ -130,7 +129,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       }
       sink.on_metadata_received(MetadataReceivedPayload{
           .info_hash = hash,
-          .data = data,
+          .data = std::move(data),
       });
 
       ++dispatched;
@@ -148,7 +147,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
 
       sink.on_metadata_failed(InfoMessagePayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -161,7 +160,9 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     // DHT bootstrap alert.
     case lt::dht_bootstrap_alert::alert_type: {
       sink.on_dht_bootstrap();
+
       ++dispatched;
+
       break;
     }
 
@@ -174,14 +175,14 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
         total += static_cast<std::uint32_t>(bucket.num_nodes);
       }
 
-      auto ip = a->local_endpoint.address().to_string();
       sink.on_dht_stats(DhtStatsPayload{
           .node_count = total,
-          .local_ip = rust::String(ip.data(), ip.size()),
+          .local_ip = rust::String(a->local_endpoint.address().to_string()),
           .local_port = static_cast<std::uint16_t>(a->local_endpoint.port()),
       });
 
       ++dispatched;
+
       break;
     }
 
@@ -203,7 +204,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::session_error_alert*>(alert);
 
       sink.on_session_error(MessagePayload{
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -216,7 +217,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::listen_failed_alert*>(alert);
 
       sink.on_listen_failed(MessagePayload{
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -229,7 +230,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::udp_error_alert*>(alert);
 
       sink.on_udp_error(MessagePayload{
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -242,7 +243,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::dht_error_alert*>(alert);
 
       sink.on_dht_error(MessagePayload{
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -255,7 +256,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::alerts_dropped_alert*>(alert);
 
       sink.on_alerts_dropped(MessagePayload{
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -271,12 +272,12 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       if (a->error == lt::errors::no_error) {
         sink.on_add_torrent(InfoMessagePayload{
             .info_hash = hash,
-            .message = rust::String(a->message().data(), a->message().size()),
+            .message = rust::String(a->message()),
         });
       } else {
         sink.on_add_torrent_error(AddTorrentErrorPayload{
             .info_hash = hash,
-            .message = rust::String(a->message().data(), a->message().size()),
+            .message = rust::String(a->message()),
             .error_value = static_cast<std::int32_t>(a->error.value()),
             .error_category = rust::String(a->error.category().name()),
         });
@@ -293,7 +294,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
 
       sink.on_torrent_error(InfoMessagePayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -307,7 +308,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
 
       sink.on_file_error(InfoMessagePayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
@@ -321,7 +322,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
 
       sink.on_torrent_delete_failed(InfoMessagePayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
-          .message = rust::String(a->message().data(), a->message().size()),
+          .message = rust::String(a->message()),
       });
 
       ++dispatched;
