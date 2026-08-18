@@ -3,12 +3,12 @@
 
 #include "nodesea_bt/bench.hpp"
 
-#include "benches/ffi_bridge.rs.h"
+#include "benches/support/ffi_bridge.rs.h"
 
 #include <array>
 #include <cstdint>
 
-namespace nodesea::bt {
+namespace nodesea::bt::bench {
 
 std::size_t bench_dht_get_peers_batch(FfiBenchSink& sink, std::size_t count) {
   const std::array<std::uint8_t, 20> hash{};
@@ -36,4 +36,4 @@ std::size_t bench_dht_announce_batch(FfiBenchSink& sink, std::size_t count) {
   return count;
 }
 
-} // namespace nodesea::bt
+} // namespace nodesea::bt::bench

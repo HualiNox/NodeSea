@@ -5,11 +5,11 @@
 
 #include <cstddef>
 
-namespace nodesea::bt {
+namespace nodesea::bt::bench {
 
 struct FfiBenchSink;
 
 std::size_t bench_dht_get_peers_batch(FfiBenchSink& sink, std::size_t count);
 std::size_t bench_dht_announce_batch(FfiBenchSink& sink, std::size_t count);
 
-} // namespace nodesea::bt
+} // namespace nodesea::bt::bench

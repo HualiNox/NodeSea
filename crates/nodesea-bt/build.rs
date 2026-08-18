@@ -119,8 +119,8 @@ fn main() {
 
     if bench_internals {
         let generated_bench_header = Path::new(&env::var("OUT_DIR").unwrap())
-            .join("cxxbridge/include/benches/ffi_bridge.rs.h");
-        let editor_bench_header = editor_include.join("benches/ffi_bridge.rs.h");
+            .join("cxxbridge/include/benches/support/ffi_bridge.rs.h");
+        let editor_bench_header = editor_include.join("benches/support/ffi_bridge.rs.h");
         fs::create_dir_all(editor_bench_header.parent().unwrap()).unwrap();
         fs::copy(generated_bench_header, editor_bench_header).unwrap();
     }

@@ -24,7 +24,7 @@ unsafe fn emit<S: EventSink>(data: *mut (), event: BtEvent) {
     unsafe { (&mut *data.cast::<S>()).on_event(event) };
 }
 
-#[cxx::bridge(namespace = "nodesea::bt")]
+#[cxx::bridge(namespace = "nodesea::bt::bench")]
 mod bridge {
     extern "Rust" {
         type FfiBenchSink;
