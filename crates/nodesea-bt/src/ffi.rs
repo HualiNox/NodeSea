@@ -41,6 +41,7 @@ mod bridge {
         fn on_metadata_failed(self: &mut FfiEventSink, event: InfoMessagePayload);
         fn on_dht_stats(self: &mut FfiEventSink, event: DhtStatsPayload);
         fn on_dht_bootstrap(self: &mut FfiEventSink);
+        fn on_dht_get_peers(self: &mut FfiEventSink, event: DhtGetPeersPayload);
         fn on_add_torrent(self: &mut FfiEventSink, event: InfoMessagePayload);
         fn on_add_torrent_error(self: &mut FfiEventSink, event: AddTorrentErrorPayload);
         fn on_torrent_error(self: &mut FfiEventSink, event: InfoMessagePayload);
@@ -80,6 +81,11 @@ mod bridge {
     /// Payload for DHT statistics.
     pub(crate) struct DhtStatsPayload {
         node_count: u32,
+    }
+
+    /// Payload for a DHT get peers alert.
+    pub(crate) struct DhtGetPeersPayload {
+        info_hash: [u8; 20],
     }
 
     /// Payload for a failed torrent-add operation.
@@ -143,6 +149,12 @@ impl FfiEventSink {
 
     fn on_dht_bootstrap(&mut self) {
         self.emit(BtEvent::DhtBootstrap);
+    }
+
+    fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
+        self.emit(BtEvent::DhtGetPeers {
+            info_hash: event.info_hash.into(),
+        });
     }
 
     fn on_add_torrent(&mut self, event: bridge::InfoMessagePayload) {

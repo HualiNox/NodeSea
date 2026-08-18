@@ -158,6 +158,17 @@ std::size_t Engine::poll_events(FfiEventSink &sink) {
       break;
     }
 
+    // DHT get peers alert.
+    case lt::dht_get_peers_alert::alert_type: {
+      auto *a = static_cast<lt::dht_get_peers_alert *>(alert);
+
+      sink.on_dht_get_peers(
+          DhtGetPeersPayload{.info_hash = digest_to_array(a->info_hash)});
+      ++dispatched;
+
+      break;
+    }
+
     // Session error alert.
     case lt::session_error_alert::alert_type: {
       auto *a = static_cast<lt::session_error_alert *>(alert);

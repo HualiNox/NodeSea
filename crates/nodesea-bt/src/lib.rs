@@ -45,6 +45,12 @@ pub enum BtEvent {
     /// The DHT bootstrap process has completed.
     DhtBootstrap,
 
+    /// A DHT get peers event was received.
+    DhtGetPeers {
+        /// Info hash associated with the get peers request.
+        info_hash: InfoHash,
+    },
+
     /// A torrent was added successfully.
     AddTorrent {
         /// Info hash of the added torrent.
