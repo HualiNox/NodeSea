@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 HualiNox
+
 cmake_minimum_required(VERSION 3.24)
 
 project(nodesea_bt LANGUAGES CXX)
