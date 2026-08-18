@@ -13,9 +13,13 @@ hex = "0.4.3"
 [dev-dependencies]
 criterion = "0.5"
 
+[features]
+bench-internals = []
+
 [[bench]]
-name = "event_sink"
+name = "ffi_dispatch"
 harness = false
+required-features = ["bench-internals"]
 
 [build-dependencies]
 cmake = "0.1.58"

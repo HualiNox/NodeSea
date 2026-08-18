@@ -11,6 +11,15 @@ fn json_string(value: impl AsRef<str>) -> String {
     )
 }
 
+const CPP_SOURCES: &[&str] = &["cpp/engine.cpp", "cpp/helper.cpp"];
+const BENCH_CPP_SOURCE: &str = "benches/support/cpp/bench.cpp";
+const HEADER_SOURCES: &[&str] = &[
+    "include/nodesea_bt/engine.hpp",
+    "include/nodesea_bt/helper.hpp",
+];
+const BENCH_INCLUDE_DIR: &str = "benches/support/include";
+const BENCH_HEADER_SOURCE: &str = "benches/support/include/nodesea_bt/bench.hpp";
+
 fn main() {
     // Build the CMake project and get the output directory
     let dst = cmake::Config::new(".")
@@ -40,16 +49,21 @@ fn main() {
     // prefix and the Boost source fetched by CMake, so it does not depend on
     // a system/Homebrew Boost installation.
     cxx_build::CFG.include_prefix = "";
-    let mut bridge = cxx_build::bridge("src/ffi.rs");
+    let bench_internals = env::var_os("CARGO_FEATURE_BENCH_INTERNALS").is_some();
+    let bridge_sources = if bench_internals {
+        vec!["src/ffi.rs", "benches/support/ffi_bridge.rs"]
+    } else {
+        vec!["src/ffi.rs"]
+    };
+    let mut bridge = cxx_build::bridges(bridge_sources);
 
-    // Add all .cpp files from the cpp directory
-    if let Ok(entries) = fs::read_dir("cpp") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "cpp") {
-                bridge.file(path);
-            }
-        }
+    // Keep production sources explicit. Benchmark code is added only for the
+    // benchmark build, so a normal library build cannot compile it by accident.
+    for source in CPP_SOURCES {
+        bridge.file(source);
+    }
+    if bench_internals {
+        bridge.file(BENCH_CPP_SOURCE).include(BENCH_INCLUDE_DIR);
     }
 
     // Include directories
@@ -103,6 +117,14 @@ fn main() {
     fs::create_dir_all(editor_header.parent().unwrap()).unwrap();
     fs::copy(generated_header, editor_header).unwrap();
 
+    if bench_internals {
+        let generated_bench_header = Path::new(&env::var("OUT_DIR").unwrap())
+            .join("cxxbridge/include/benches/ffi_bridge.rs.h");
+        let editor_bench_header = editor_include.join("benches/ffi_bridge.rs.h");
+        fs::create_dir_all(editor_bench_header.parent().unwrap()).unwrap();
+        fs::copy(generated_bench_header, editor_bench_header).unwrap();
+    }
+
     // Link the C++ library and its internal dependencies
     println!(
         "cargo:rustc-link-search=native={}",
@@ -142,6 +164,15 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=src/ffi.rs");
-    println!("cargo:rerun-if-changed=cpp");
-    println!("cargo:rerun-if-changed=include");
+    println!("cargo:rerun-if-changed=benches/support/ffi_bridge.rs");
+    for source in CPP_SOURCES {
+        println!("cargo:rerun-if-changed={source}");
+    }
+    if bench_internals {
+        println!("cargo:rerun-if-changed={BENCH_CPP_SOURCE}");
+        println!("cargo:rerun-if-changed={BENCH_HEADER_SOURCE}");
+    }
+    for header in HEADER_SOURCES {
+        println!("cargo:rerun-if-changed={header}");
+    }
 }
