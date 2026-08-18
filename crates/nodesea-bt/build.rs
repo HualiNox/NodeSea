@@ -57,9 +57,12 @@ fn main() {
         .include(project_include)
         .include(&cmake_include)
         .include(&cxxbridge_include)
-        // Keep the standalone cxx-rs compilation consistent with the
-        // libtorrent CMake target, which was configured with OpenSSL.
         .define("TORRENT_USE_OPENSSL", None)
+        .define("TORRENT_ABI_VERSION", Some("2"))
+        .define("BOOST_ASIO_ENABLE_CANCELIO", None)
+        .define("BOOST_ASIO_NO_DEPRECATED", None)
+        .define("BOOST_SYSTEM_USE_UTF8", None)
+        .define("_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING", None)
         .std("c++20");
     for include_dir in &boost_include_dirs {
         bridge.include(include_dir);
