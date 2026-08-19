@@ -11,7 +11,6 @@ fn json_string(value: impl AsRef<str>) -> String {
     )
 }
 
-const CPP_SOURCES: &[&str] = &["cpp/engine.cpp", "cpp/helper.cpp"];
 const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
     "src/ffi.rs",
     "src/ffi/dht.rs",
@@ -19,54 +18,48 @@ const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
     "src/ffi/torrent.rs",
 ];
 const BENCH_CPP_SOURCE: &str = "benches/support/cpp/bench.cpp";
-const HEADER_SOURCES: &[&str] = &[
-    "include/nodesea_bt/engine.hpp",
-    "include/nodesea_bt/helper.hpp",
-];
 const BENCH_INCLUDE_DIR: &str = "benches/support/include";
 const BENCH_HEADER_SOURCE: &str = "benches/support/include/nodesea_bt/bench.hpp";
 
 fn main() {
-    // Build the CMake project and get the output directory
-    let dst = cmake::Config::new(".")
-        .define("BUILD_SHARED_LIBS", "OFF")
-        .define("build_tests", "OFF")
-        .define("build_examples", "OFF")
-        .define("build_tools", "OFF")
-        .build();
+    // CMake owns libtorrent's feature policy and derives this profile from
+    // Cargo's PROFILE, OPT_LEVEL, and DEBUG environment variables.
+    let mut cmake_config = cmake::Config::new(".");
+    let native_profile = cmake_config.get_profile().to_owned();
+    let dst = cmake_config.build();
+    let debug_native_build = native_profile == "Debug";
 
     let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).to_path_buf();
     let cmake_include = dst.join("include");
     let cxxbridge_include = out_dir.join("cxxbridge/include");
     let project_include = Path::new("include");
-    let boost_source = out_dir.join("build/_deps/boost_src-src");
-    let mut boost_include_dirs = Vec::new();
-    let boost_libs = boost_source.join("libs");
-    if let Ok(entries) = fs::read_dir(&boost_libs) {
-        for entry in entries.flatten() {
-            let include_dir = entry.path().join("include");
-            if include_dir.is_dir() {
-                boost_include_dirs.push(include_dir);
-            }
-        }
-    }
 
-    // Build the C++ bridge. The include directory comes from CMake's install
-    // prefix and the Boost source fetched by CMake, so it does not depend on
-    // a system/Homebrew Boost installation.
+    // Build the C++ bridge against CMake's installed libtorrent and Boost
+    // headers, without depending on a system/Homebrew Boost installation.
     cxx_build::CFG.include_prefix = "";
     let bench_internals = env::var_os("CARGO_FEATURE_BENCH_INTERNALS").is_some();
-    let mut bridge_sources = PRODUCTION_BRIDGE_SOURCES.to_vec();
-    if bench_internals {
-        bridge_sources.push("benches/support/ffi_bridge.rs");
-    }
+    let bridge_sources = if bench_internals {
+        vec![
+            "src/ffi.rs",
+            "src/ffi/dht.rs",
+            "src/ffi/session.rs",
+            "src/ffi/torrent.rs",
+            "benches/support/ffi_bridge.rs",
+        ]
+    } else {
+        vec![
+            "src/ffi.rs",
+            "src/ffi/dht.rs",
+            "src/ffi/session.rs",
+            "src/ffi/torrent.rs",
+        ]
+    };
     let mut bridge = cxx_build::bridges(bridge_sources);
 
     // Keep production sources explicit. Benchmark code is added only for the
     // benchmark build, so a normal library build cannot compile it by accident.
-    for source in CPP_SOURCES {
-        bridge.file(source);
-    }
+    bridge.file("cpp/engine.cpp");
+    bridge.file("cpp/helper.cpp");
     if bench_internals {
         bridge.file(BENCH_CPP_SOURCE).include(BENCH_INCLUDE_DIR);
     }
@@ -78,13 +71,15 @@ fn main() {
         .include(&cxxbridge_include)
         .define("TORRENT_USE_OPENSSL", None)
         .define("TORRENT_ABI_VERSION", Some("2"))
+        .define("TORRENT_USE_RTC", Some("0"))
+        .define("TORRENT_USE_I2P", Some("0"))
         .define("BOOST_ASIO_ENABLE_CANCELIO", None)
         .define("BOOST_ASIO_NO_DEPRECATED", None)
         .define("BOOST_SYSTEM_USE_UTF8", None)
         .define("_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING", None)
         .std("c++20");
-    for include_dir in &boost_include_dirs {
-        bridge.include(include_dir);
+    if debug_native_build {
+        bridge.define("TORRENT_USE_ASSERTS", None);
     }
     bridge.compile("nodesea-bt-ffi");
 
@@ -92,27 +87,69 @@ fn main() {
     // can consume the repository-root compile_commands.json through clangd.
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let workspace_root = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
-    let source = Path::new(&manifest_dir).join("cpp/engine.cpp");
     let compile_commands = workspace_root.join("compile_commands.json");
-    let mut include_flags = vec![Path::new(&manifest_dir).join("include"), cmake_include];
+    let engine_source = Path::new(&manifest_dir).join("cpp/engine.cpp");
+    let helper_source = Path::new(&manifest_dir).join("cpp/helper.cpp");
+    let bench_source = Path::new(&manifest_dir).join(BENCH_CPP_SOURCE);
+    let installed_include = cmake_include;
     let editor_include = Path::new(&manifest_dir).join(".generated");
-    include_flags.push(editor_include.clone());
-    include_flags.push(cxxbridge_include);
-    include_flags.extend(boost_include_dirs);
-    let arguments = include_flags
-        .iter()
-        .map(|path| json_string(format!("-I{}", path.to_string_lossy())))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let arguments = format!("{}, {}", json_string("-DTORRENT_USE_OPENSSL"), arguments);
-    let command = format!(
+    let debug_assert_argument = if debug_native_build {
+        format!(", {}", json_string("-DTORRENT_USE_ASSERTS"))
+    } else {
+        String::new()
+    };
+    let common_arguments = format!(
+        "{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}{}",
+        json_string("-DTORRENT_USE_OPENSSL"),
+        json_string("-DTORRENT_ABI_VERSION=2"),
+        json_string("-DTORRENT_USE_RTC=0"),
+        json_string("-DTORRENT_USE_I2P=0"),
+        json_string("-DBOOST_ASIO_ENABLE_CANCELIO"),
+        json_string("-DBOOST_ASIO_NO_DEPRECATED"),
+        json_string("-DBOOST_SYSTEM_USE_UTF8"),
+        json_string("-D_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING"),
+        json_string(format!(
+            "-I{}",
+            Path::new(&manifest_dir).join("include").display()
+        )),
+        json_string(format!("-I{}", installed_include.display())),
+        json_string(format!("-I{}", editor_include.display())),
+        json_string(format!("-I{}", cxxbridge_include.display())),
+        debug_assert_argument,
+    );
+    let bench_arguments = format!(
+        "{common_arguments}, {}",
+        json_string(format!(
+            "-I{}",
+            Path::new(&manifest_dir).join(BENCH_INCLUDE_DIR).display()
+        )),
+    );
+    let engine_command = format!(
         "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
         json_string(&manifest_dir),
-        json_string(source.to_string_lossy()),
-        arguments,
-        json_string(source.to_string_lossy()),
+        json_string(engine_source.to_string_lossy()),
+        common_arguments,
+        json_string(engine_source.to_string_lossy()),
     );
-    fs::write(compile_commands, format!("[{}]", command)).unwrap();
+    let helper_command = format!(
+        "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
+        json_string(&manifest_dir),
+        json_string(helper_source.to_string_lossy()),
+        common_arguments,
+        json_string(helper_source.to_string_lossy()),
+    );
+    let bench_command = format!(
+        "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
+        json_string(&manifest_dir),
+        json_string(bench_source.to_string_lossy()),
+        bench_arguments,
+        json_string(bench_source.to_string_lossy()),
+    );
+    fs::write(
+        compile_commands,
+        format!("[{engine_command},{helper_command},{bench_command}]"),
+    )
+    .unwrap();
 
     // Keep stable copies for clangd. The real CXX headers live under Cargo's
     // hash-based OUT_DIR, which is not practical to reference from an editor.
@@ -139,9 +176,6 @@ fn main() {
     );
 
     println!("cargo:rustc-link-lib=static=torrent-rasterbar");
-    println!("cargo:rustc-link-lib=static=datachannel-static");
-    println!("cargo:rustc-link-lib=static=usrsctp");
-    println!("cargo:rustc-link-lib=static=juice-static");
 
     // Dynamically retrieve OpenSSL library paths discovered by CMake.
     // This completely avoids hardcoding system or Homebrew-specific paths.
@@ -170,18 +204,22 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=Security");
     }
 
-    println!("cargo:rerun-if-changed=src/ffi.rs");
-    println!("cargo:rerun-if-changed=src/ffi");
-    println!("cargo:rerun-if-changed=src/types");
-    println!("cargo:rerun-if-changed=benches/support/ffi_bridge.rs");
-    for source in CPP_SOURCES {
-        println!("cargo:rerun-if-changed={source}");
-    }
-    if bench_internals {
-        println!("cargo:rerun-if-changed={BENCH_CPP_SOURCE}");
-        println!("cargo:rerun-if-changed={BENCH_HEADER_SOURCE}");
-    }
-    for header in HEADER_SOURCES {
-        println!("cargo:rerun-if-changed={header}");
+    let rerun_paths = [
+        // Rust FFI implementation trees.
+        "src/ffi.rs",
+        "src/ffi",
+        "src/types",
+        // Production C++ bridge sources and headers.
+        "cpp/engine.cpp",
+        "cpp/helper.cpp",
+        "include/nodesea_bt/engine.hpp",
+        "include/nodesea_bt/helper.hpp",
+        // Benchmark-only bridge sources and headers.
+        "benches/support/ffi_bridge.rs",
+        BENCH_CPP_SOURCE,
+        BENCH_HEADER_SOURCE,
+    ];
+    for path in rerun_paths {
+        println!("cargo:rerun-if-changed={path}");
     }
 }

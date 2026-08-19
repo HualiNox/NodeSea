@@ -7,8 +7,7 @@ project(nodesea_bt LANGUAGES CXX)
 
 include(FetchContent)
 
-# Build configuration
-set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+# Libtorrent build policy. CMake derives the build type from Cargo's profile.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 set(build_tests OFF CACHE BOOL "" FORCE)
@@ -16,13 +15,16 @@ set(build_examples OFF CACHE BOOL "" FORCE)
 set(build_tools OFF CACHE BOOL "" FORCE)
 set(python-bindings OFF CACHE BOOL "" FORCE)
 
-# The Rust build script compiles the FFI wrapper. CMake only builds libtorrent.
-set(
-    CMAKE_CXX_STANDARD 20
-    CACHE STRING
-    ""
-    FORCE
-)
+# Keep the protocol feature set identical for every Cargo profile. The Rust
+# build script owns the C++ wrapper language standard and matching header
+# definitions; libtorrent declares its own C++17 requirement.
+set(dht ON CACHE BOOL "" FORCE)
+set(extensions ON CACHE BOOL "" FORCE)
+set(deprecated-functions ON CACHE BOOL "" FORCE)
+set(encryption ON CACHE BOOL "" FORCE)
+set(exceptions ON CACHE BOOL "" FORCE)
+set(webtorrent OFF CACHE BOOL "" FORCE)
+set(i2p OFF CACHE BOOL "" FORCE)
 
 # boost - don't have source
 set(BOOST_VERSION 1.92.0)
@@ -69,17 +71,21 @@ foreach(BOOST_INCLUDE_DIR IN LISTS BOOST_INCLUDE_DIRS)
     )
 endforeach()
 
-# Enable interprocedural optimization
+# Use IPO only for CMake's Release configuration. Debug stays free of IPO and
+# extra optimization policy for native build and incremental-development speed.
 include(CheckIPOSupported)
 
 check_ipo_supported(
     RESULT IPO_SUPPORTED
     OUTPUT IPO_ERROR
+    LANGUAGES CXX
 )
 
 if(IPO_SUPPORTED)
   set_property(
         TARGET torrent-rasterbar
-        PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE
+        PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
     )
+else()
+  message(STATUS "Release IPO is unavailable for libtorrent: ${IPO_ERROR}")
 endif()
