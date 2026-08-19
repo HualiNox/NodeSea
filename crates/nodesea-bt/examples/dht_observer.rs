@@ -78,6 +78,19 @@ impl EventSink for Observer {
                     packet.len()
                 );
             }
+            BtEvent::DhtLiveNodes {
+                local_node_id,
+                nodes,
+            } => {
+                println!(
+                    "dht live nodes: local_node_id={}, nodes={}",
+                    local_node_id,
+                    nodes.len()
+                );
+                for node in nodes {
+                    self.nodes.insert(node.endpoint);
+                }
+            }
             _ => {}
         }
     }
@@ -99,6 +112,7 @@ fn main() {
         engine.post_dht_stats();
 
         if observer.dht_bootstrapped {
+            engine.post_dht_live_nodes();
             if let Some(node) = observer
                 .nodes
                 .iter()

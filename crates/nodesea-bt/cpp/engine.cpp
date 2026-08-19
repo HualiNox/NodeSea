@@ -4,6 +4,8 @@
 #include "nodesea_bt/engine.hpp"
 
 #include "libtorrent/address.hpp"
+#include "libtorrent/session_handle.hpp"
+#include "libtorrent/session_params.hpp"
 #include "libtorrent/time.hpp"
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
@@ -51,9 +53,8 @@ constexpr std::string_view DHT_BOOTSTRAP_NODES = "dht.libtorrent.org:25401,"
                                                  "dht.transmissionbt.com:6881";
 
 // Alert categories to enable for the session.
-constexpr auto ALERT_CATEGORIES = lt::alert_category::dht | lt::alert_category::dht_log |
-                                  lt::alert_category::dht_operation | lt::alert_category::status |
-                                  lt::alert_category::error;
+constexpr auto ALERT_CATEGORIES = lt::alert_category::dht | lt::alert_category::dht_operation |
+                                  lt::alert_category::status | lt::alert_category::error;
 
 // ----------------------------------------------------------------------------
 // Engine Implementation
@@ -412,6 +413,34 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       break;
     }
 
+    // DHT live nodes alert.
+    case lt::dht_live_nodes_alert::alert_type: {
+      auto* a = static_cast<lt::dht_live_nodes_alert*>(alert);
+
+      // Convert libtorrent nodes to private CXX wire payloads.
+      rust::Vec<DhtNodePayload> nodes;
+      nodes.reserve(a->nodes().size());
+      for (auto node : a->nodes()) {
+        nodes.push_back(DhtNodePayload{
+            .node_id = digest_to_array(node.first),
+            .endpoint =
+                UdpEndpoint{
+                    .address = rust::String(node.second.address().to_string()),
+                    .port = static_cast<std::uint16_t>(node.second.port()),
+                },
+        });
+      }
+
+      sink.on_dht_live_nodes(DhtLiveNodes{
+          .local_node_id = digest_to_array(a->node_id),
+          .nodes = std::move(nodes),
+      });
+
+      ++dispatched;
+
+      break;
+    }
+
     default:
       break;
     }
@@ -496,6 +525,19 @@ bool Engine::post_dht_sample_infohashes(const UdpEndpoint& endpoint,
   return true;
 }
 
+bool Engine::post_dht_live_nodes() const {
+  if (!impl_->session_) {
+    return false;
+  }
+
+  lt::session_params state = impl_->session_->session_state(lt::session_handle::save_dht_state);
+
+  for (auto const& [_, nid] : state.dht_state.nids) {
+    impl_->session_->dht_live_nodes(nid);
+  }
+
+  return true;
+}
 // -----------------------------------------------------------------------------
 // CXX FFI Bridge Functions
 // -----------------------------------------------------------------------------
@@ -519,6 +561,10 @@ bool post_dht_stats(const Engine& engine) {
 bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
                                 const std::array<std::uint8_t, 20>& target) {
   return engine.post_dht_sample_infohashes(endpoint, target);
+}
+
+bool post_dht_live_nodes(const Engine& engine) {
+  return engine.post_dht_live_nodes();
 }
 
 } // namespace nodesea::bt

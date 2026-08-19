@@ -6,37 +6,54 @@ use crate::{BtEvent, DhtNode, InfoHash};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
+
+    /// Direction of a raw DHT packet on the wire.
     enum DhtDirectionPayload {
+        /// Packet received from a DHT node.
         Incoming,
+        /// Packet sent to a DHT node.
         Outgoing,
     }
 
     /// Payload for a DHT announce alert.
     pub(super) struct DhtAnnouncePayload {
+        /// Torrent info hash associated with the announce.
         info_hash: [u8; 20],
+        /// IP address announced by the remote peer.
         peer_ip: String,
+        /// Port announced by the remote peer.
         peer_port: u16,
     }
 
     /// Payload for DHT statistics.
     pub(super) struct DhtStatsPayload {
+        /// Number of nodes currently in the DHT routing table.
         node_count: u32,
+        /// Local IP address used by the DHT socket.
         local_ip: String,
+        /// Local UDP port used by the DHT socket.
         local_port: u16,
     }
 
     /// Payload for a DHT get-peers alert.
     pub(super) struct DhtGetPeersPayload {
+        /// Torrent info hash associated with the lookup.
         info_hash: [u8; 20],
     }
 
+    /// Wire representation of a UDP endpoint.
     pub(super) struct UdpEndpoint {
+        /// Numeric IP address without a port suffix.
         address: String,
+        /// UDP port number.
         port: u16,
     }
 
+    /// Wire representation of a DHT node and its endpoint.
     pub(super) struct DhtNodePayload {
+        /// DHT node identifier.
         node_id: [u8; 20],
+        /// Network endpoint associated with the node.
         endpoint: UdpEndpoint,
     }
 
@@ -69,13 +86,21 @@ mod bridge {
         endpoint: UdpEndpoint,
         packet: Vec<u8>,
     }
+
+    /// Wire payload containing one local DHT routing table snapshot.
+    pub(super) struct DhtLiveNodes {
+        /// Local DHT node ID owning the routing table.
+        local_node_id: [u8; 20],
+        /// Nodes currently present in the routing table.
+        nodes: Vec<DhtNodePayload>,
+    }
 }
 
 // These are narrow, named entries for the canonical callback bridge. The
 // bridge module itself remains private and no wildcard re-export is used.
 pub(super) use bridge::{
-    DhtAnnouncePayload, DhtGetPeersPayload, DhtPktPayload, DhtSampleInfohashesPayload,
-    DhtStatsPayload, UdpEndpoint,
+    DhtAnnouncePayload, DhtGetPeersPayload, DhtLiveNodes, DhtPktPayload,
+    DhtSampleInfohashesPayload, DhtStatsPayload, UdpEndpoint,
 };
 
 impl From<bridge::DhtAnnouncePayload> for BtEvent {
@@ -159,6 +184,15 @@ impl From<bridge::DhtPktPayload> for BtEvent {
             },
             endpoint: value.endpoint.into(),
             packet: value.packet,
+        }
+    }
+}
+
+impl From<bridge::DhtLiveNodes> for BtEvent {
+    fn from(value: bridge::DhtLiveNodes) -> Self {
+        Self::DhtLiveNodes {
+            local_node_id: value.local_node_id.into(),
+            nodes: value.nodes.into_iter().map(|n| n.into()).collect(),
         }
     }
 }

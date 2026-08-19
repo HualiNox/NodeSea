@@ -1,6 +1,8 @@
+//! Public domain events emitted by the BitTorrent engine.
+
 use std::{net::SocketAddr, time::Duration};
 
-use crate::DhtNode;
+use crate::{DhtNode, NodeId};
 
 use super::identity::InfoHash;
 
@@ -140,5 +142,12 @@ pub enum BtEvent {
         endpoint: SocketAddr,
         /// Raw packet data.
         packet: Vec<u8>,
+    },
+    /// Live nodes were reported for one local DHT routing table.
+    DhtLiveNodes {
+        /// Node ID identifying the local DHT routing table.
+        local_node_id: NodeId,
+        /// Nodes currently present in that routing table.
+        nodes: Vec<DhtNode>,
     },
 }

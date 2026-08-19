@@ -44,6 +44,10 @@ public:
   // directs key-space traversal and does not affect the returned samples.
   bool post_dht_sample_infohashes(const UdpEndpoint& endpoint,
                                   const std::array<std::uint8_t, 20>& target) const;
+
+  // Requests snapshots of the live nodes in each local DHT routing table.
+  // Results are dispatched asynchronously as DHT live-nodes alerts.
+  bool post_dht_live_nodes() const;
 };
 
 // Creates a new BitTorrent engine instance.
@@ -63,5 +67,8 @@ bool post_dht_stats(const Engine& engine);
 
 bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
                                 const std::array<std::uint8_t, 20>& target);
+
+// Requests live-node snapshots from the local DHT routing tables.
+bool post_dht_live_nodes(const Engine& engine);
 
 } // namespace nodesea::bt

@@ -46,6 +46,7 @@ mod bridge {
         fn on_alerts_dropped(self: &mut FfiEventSink, event: MessagePayload);
         fn on_dht_sample_infohashes(self: &mut FfiEventSink, event: DhtSampleInfohashesPayload);
         fn on_dht_pkt(self: &mut FfiEventSink, event: DhtPktPayload);
+        fn on_dht_live_nodes(self: &mut FfiEventSink, event: DhtLiveNodes);
     }
 
     unsafe extern "C++" {
@@ -64,6 +65,7 @@ mod bridge {
         type UdpEndpoint = crate::ffi::dht::UdpEndpoint;
         type DhtSampleInfohashesPayload = crate::ffi::dht::DhtSampleInfohashesPayload;
         type DhtPktPayload = crate::ffi::dht::DhtPktPayload;
+        type DhtLiveNodes = crate::ffi::dht::DhtLiveNodes;
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
@@ -78,6 +80,7 @@ mod bridge {
             endpoint: &UdpEndpoint,
             target: &[u8; 20],
         ) -> bool;
+        fn post_dht_live_nodes(engine: &Engine) -> bool;
     }
 }
 
@@ -130,6 +133,10 @@ impl FfiEventSink {
     fn on_dht_pkt(&mut self, event: bridge::DhtPktPayload) {
         self.emit(event.into());
     }
+
+    fn on_dht_live_nodes(&mut self, event: bridge::DhtLiveNodes) {
+        self.emit(event.into());
+    }
 }
 
 //===----------------------------------------------------------------------===//
@@ -172,6 +179,7 @@ pub(super) fn post_dht_stats(engine: &Engine) -> bool {
     bridge::post_dht_stats(&engine.inner)
 }
 
+/// Requests an asynchronous DHT sample infohashes alert.
 pub(super) fn post_dht_sample_infohashes(
     engine: &Engine,
     endpoint: &SocketAddr,
@@ -182,4 +190,9 @@ pub(super) fn post_dht_sample_infohashes(
         &UdpEndpoint::from_socket_addr(endpoint),
         target.as_bytes(),
     )
+}
+
+/// Requests live nodes from each local DHT routing table.
+pub(super) fn post_dht_live_nodes(engine: &Engine) -> bool {
+    bridge::post_dht_live_nodes(&engine.inner)
 }

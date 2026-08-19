@@ -127,10 +127,29 @@ impl Engine {
     pub fn post_dht_sample_infohashes(&self, endpoint: &SocketAddr, target: &DhtTarget) -> bool {
         ffi::post_dht_sample_infohashes(&self.inner, endpoint, target)
     }
+
+    /// Requests live nodes from each local DHT routing table.
+    ///
+    /// This operation only reads the local routing tables; it does not send a
+    /// network request. A separate [`BtEvent::DhtLiveNodes`] is produced for
+    /// each local DHT instance whose state is available.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the request was accepted by the local native session, `false`
+    /// otherwise. The resulting lists are delivered later as
+    /// [`BtEvent::DhtLiveNodes`]. If the DHT is not started or has no local
+    /// routing-table state, no live-nodes event may be produced.
+    pub fn post_dht_live_nodes(&self) -> bool {
+        ffi::post_dht_live_nodes(&self.inner)
+    }
 }
 
 /// A queue-based event sink that buffers events in a deque.
+/// Temporarily collects native callbacks while implementing single-event
+/// polling on top of the batch polling interface.
 struct QueueSink<'a> {
+    /// Destination buffer for callbacks received during one poll.
     buffer: &'a mut VecDeque<BtEvent>,
 }
 
