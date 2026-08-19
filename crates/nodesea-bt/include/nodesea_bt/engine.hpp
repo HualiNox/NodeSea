@@ -11,7 +11,7 @@
 namespace nodesea::bt {
 
 struct FfiEventSink;
-struct UdpEndpoint;
+struct UdpEndpointPayload;
 
 // BitTorrent observation and metadata fetching engine wrapper.
 class Engine {
@@ -42,7 +42,7 @@ public:
 
   // Requests BEP 51 infohash samples from a remote DHT endpoint. The target
   // directs key-space traversal and does not affect the returned samples.
-  bool post_dht_sample_infohashes(const UdpEndpoint& endpoint,
+  bool post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
                                   const std::array<std::uint8_t, 20>& target) const;
 
   // Requests snapshots of the live nodes in each local DHT routing table.
@@ -65,7 +65,7 @@ bool cancel_fetch(Engine& engine, const std::array<std::uint8_t, 20>& info_hash)
 
 bool post_dht_stats(const Engine& engine);
 
-bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
+bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpointPayload& endpoint,
                                 const std::array<std::uint8_t, 20>& target);
 
 // Requests live-node snapshots from the local DHT routing tables.

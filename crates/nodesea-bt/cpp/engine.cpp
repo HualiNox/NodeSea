@@ -155,7 +155,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::metadata_failed_alert::alert_type: {
       auto* a = static_cast<lt::metadata_failed_alert*>(alert);
 
-      sink.on_metadata_failed(InfoMessagePayload{
+      sink.on_metadata_failed(MetadataFailedPayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
           .message = rust::String(a->message()),
       });
@@ -213,7 +213,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::session_error_alert::alert_type: {
       auto* a = static_cast<lt::session_error_alert*>(alert);
 
-      sink.on_session_error(MessagePayload{
+      sink.on_session_error(SessionErrorPayload{
           .message = rust::String(a->message()),
       });
 
@@ -226,7 +226,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::listen_failed_alert::alert_type: {
       auto* a = static_cast<lt::listen_failed_alert*>(alert);
 
-      sink.on_listen_failed(MessagePayload{
+      sink.on_listen_failed(ListenFailedPayload{
           .message = rust::String(a->message()),
       });
 
@@ -239,7 +239,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::udp_error_alert::alert_type: {
       auto* a = static_cast<lt::udp_error_alert*>(alert);
 
-      sink.on_udp_error(MessagePayload{
+      sink.on_udp_error(UdpErrorPayload{
           .message = rust::String(a->message()),
       });
 
@@ -252,7 +252,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::dht_error_alert::alert_type: {
       auto* a = static_cast<lt::dht_error_alert*>(alert);
 
-      sink.on_dht_error(MessagePayload{
+      sink.on_dht_error(DhtErrorPayload{
           .message = rust::String(a->message()),
       });
 
@@ -265,7 +265,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::alerts_dropped_alert::alert_type: {
       auto* a = static_cast<lt::alerts_dropped_alert*>(alert);
 
-      sink.on_alerts_dropped(MessagePayload{
+      sink.on_alerts_dropped(AlertsDroppedPayload{
           .message = rust::String(a->message()),
       });
 
@@ -280,7 +280,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
 
       auto hash = digest_to_array(a->params.info_hashes.get_best());
       if (a->error == lt::errors::no_error) {
-        sink.on_add_torrent(InfoMessagePayload{
+        sink.on_add_torrent(AddTorrentPayload{
             .info_hash = hash,
             .message = rust::String(a->message()),
         });
@@ -302,7 +302,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::torrent_error_alert::alert_type: {
       auto* a = static_cast<lt::torrent_error_alert*>(alert);
 
-      sink.on_torrent_error(InfoMessagePayload{
+      sink.on_torrent_error(TorrentErrorPayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
           .message = rust::String(a->message()),
       });
@@ -316,7 +316,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::file_error_alert::alert_type: {
       auto* a = static_cast<lt::file_error_alert*>(alert);
 
-      sink.on_file_error(InfoMessagePayload{
+      sink.on_file_error(FileErrorPayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
           .message = rust::String(a->message()),
       });
@@ -330,7 +330,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::torrent_delete_failed_alert::alert_type: {
       auto* a = static_cast<lt::torrent_delete_failed_alert*>(alert);
 
-      sink.on_torrent_delete_failed(InfoMessagePayload{
+      sink.on_torrent_delete_failed(TorrentDeleteFailedPayload{
           .info_hash = digest_to_array(a->handle.info_hash()),
           .message = rust::String(a->message()),
       });
@@ -345,9 +345,9 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::dht_sample_infohashes_alert*>(alert);
 
       // Convert libtorrent samples to private CXX wire payloads.
-      rust::Vec<SampleInfoHash> samples;
+      rust::Vec<SampleInfoHashPayload> samples;
       for (lt::sha1_hash sample : a->samples()) {
-        samples.push_back(SampleInfoHash{
+        samples.push_back(SampleInfoHashPayload{
             .bytes = digest_to_array(sample),
         });
       }
@@ -358,7 +358,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
         nodes.push_back(DhtNodePayload{
             .node_id = digest_to_array(node.first),
             .endpoint =
-                UdpEndpoint{
+                UdpEndpointPayload{
                     .address = rust::String(node.second.address().to_string()),
                     .port = static_cast<uint16_t>(node.second.port()),
                 },
@@ -370,7 +370,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
               DhtNodePayload{
                   .node_id = digest_to_array(a->node_id),
                   .endpoint =
-                      UdpEndpoint{
+                      UdpEndpointPayload{
                           .address = rust::String(a->endpoint.address().to_string()),
                           .port = static_cast<std::uint16_t>(a->endpoint.port()),
                       },
@@ -401,7 +401,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
           .direction = a->direction == lt::dht_pkt_alert::incoming ? DhtDirectionPayload::Incoming
                                                                    : DhtDirectionPayload::Outgoing,
           .endpoint =
-              UdpEndpoint{
+              UdpEndpointPayload{
                   .address = rust::String(a->node.address().to_string()),
                   .port = static_cast<std::uint16_t>(a->node.port()),
               },
@@ -424,14 +424,14 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
         nodes.push_back(DhtNodePayload{
             .node_id = digest_to_array(node.first),
             .endpoint =
-                UdpEndpoint{
+                UdpEndpointPayload{
                     .address = rust::String(node.second.address().to_string()),
                     .port = static_cast<std::uint16_t>(node.second.port()),
                 },
         });
       }
 
-      sink.on_dht_live_nodes(DhtLiveNodes{
+      sink.on_dht_live_nodes(DhtLiveNodesPayload{
           .local_node_id = digest_to_array(a->node_id),
           .nodes = std::move(nodes),
       });
@@ -502,7 +502,7 @@ bool Engine::post_dht_stats() const {
   return true;
 }
 
-bool Engine::post_dht_sample_infohashes(const UdpEndpoint& endpoint,
+bool Engine::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
                                         const std::array<std::uint8_t, 20>& target) const {
   if (!impl_->session_) {
     return false;
@@ -558,7 +558,7 @@ bool post_dht_stats(const Engine& engine) {
   return engine.post_dht_stats();
 }
 
-bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
+bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpointPayload& endpoint,
                                 const std::array<std::uint8_t, 20>& target) {
   return engine.post_dht_sample_infohashes(endpoint, target);
 }

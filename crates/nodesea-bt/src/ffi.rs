@@ -13,7 +13,7 @@ mod torrent;
 
 use std::net::SocketAddr;
 
-use crate::{BtEvent, DhtTarget, EventSink, InfoHash, ffi::dht::UdpEndpoint};
+use crate::{BtEvent, DhtTarget, EventSink, InfoHash, ffi::dht::UdpEndpointPayload};
 use sink::FfiEventSink;
 
 //===----------------------------------------------------------------------===//
@@ -30,23 +30,23 @@ mod bridge {
 
         fn on_dht_announce(self: &mut FfiEventSink, event: DhtAnnouncePayload);
         fn on_metadata_received(self: &mut FfiEventSink, event: MetadataReceivedPayload);
-        fn on_metadata_failed(self: &mut FfiEventSink, event: InfoMessagePayload);
+        fn on_metadata_failed(self: &mut FfiEventSink, event: MetadataFailedPayload);
         fn on_dht_stats(self: &mut FfiEventSink, event: DhtStatsPayload);
         fn on_dht_bootstrap(self: &mut FfiEventSink);
         fn on_dht_get_peers(self: &mut FfiEventSink, event: DhtGetPeersPayload);
-        fn on_add_torrent(self: &mut FfiEventSink, event: InfoMessagePayload);
+        fn on_add_torrent(self: &mut FfiEventSink, event: AddTorrentPayload);
         fn on_add_torrent_error(self: &mut FfiEventSink, event: AddTorrentErrorPayload);
-        fn on_torrent_error(self: &mut FfiEventSink, event: InfoMessagePayload);
-        fn on_file_error(self: &mut FfiEventSink, event: InfoMessagePayload);
-        fn on_torrent_delete_failed(self: &mut FfiEventSink, event: InfoMessagePayload);
-        fn on_session_error(self: &mut FfiEventSink, event: MessagePayload);
-        fn on_listen_failed(self: &mut FfiEventSink, event: MessagePayload);
-        fn on_udp_error(self: &mut FfiEventSink, event: MessagePayload);
-        fn on_dht_error(self: &mut FfiEventSink, event: MessagePayload);
-        fn on_alerts_dropped(self: &mut FfiEventSink, event: MessagePayload);
+        fn on_torrent_error(self: &mut FfiEventSink, event: TorrentErrorPayload);
+        fn on_file_error(self: &mut FfiEventSink, event: FileErrorPayload);
+        fn on_torrent_delete_failed(self: &mut FfiEventSink, event: TorrentDeleteFailedPayload);
+        fn on_session_error(self: &mut FfiEventSink, event: SessionErrorPayload);
+        fn on_listen_failed(self: &mut FfiEventSink, event: ListenFailedPayload);
+        fn on_udp_error(self: &mut FfiEventSink, event: UdpErrorPayload);
+        fn on_dht_error(self: &mut FfiEventSink, event: DhtErrorPayload);
+        fn on_alerts_dropped(self: &mut FfiEventSink, event: AlertsDroppedPayload);
         fn on_dht_sample_infohashes(self: &mut FfiEventSink, event: DhtSampleInfohashesPayload);
         fn on_dht_pkt(self: &mut FfiEventSink, event: DhtPktPayload);
-        fn on_dht_live_nodes(self: &mut FfiEventSink, event: DhtLiveNodes);
+        fn on_dht_live_nodes(self: &mut FfiEventSink, event: DhtLiveNodesPayload);
     }
 
     unsafe extern "C++" {
@@ -59,13 +59,21 @@ mod bridge {
         type DhtStatsPayload = crate::ffi::dht::DhtStatsPayload;
         type DhtGetPeersPayload = crate::ffi::dht::DhtGetPeersPayload;
         type MetadataReceivedPayload = crate::ffi::torrent::MetadataReceivedPayload;
-        type InfoMessagePayload = crate::ffi::torrent::InfoMessagePayload;
+        type MetadataFailedPayload = crate::ffi::torrent::MetadataFailedPayload;
+        type AddTorrentPayload = crate::ffi::torrent::AddTorrentPayload;
         type AddTorrentErrorPayload = crate::ffi::torrent::AddTorrentErrorPayload;
-        type MessagePayload = crate::ffi::session::MessagePayload;
-        type UdpEndpoint = crate::ffi::dht::UdpEndpoint;
+        type TorrentErrorPayload = crate::ffi::torrent::TorrentErrorPayload;
+        type FileErrorPayload = crate::ffi::torrent::FileErrorPayload;
+        type TorrentDeleteFailedPayload = crate::ffi::torrent::TorrentDeleteFailedPayload;
+        type SessionErrorPayload = crate::ffi::session::SessionErrorPayload;
+        type ListenFailedPayload = crate::ffi::session::ListenFailedPayload;
+        type UdpErrorPayload = crate::ffi::session::UdpErrorPayload;
+        type DhtErrorPayload = crate::ffi::session::DhtErrorPayload;
+        type AlertsDroppedPayload = crate::ffi::session::AlertsDroppedPayload;
+        type UdpEndpointPayload = crate::ffi::dht::UdpEndpointPayload;
         type DhtSampleInfohashesPayload = crate::ffi::dht::DhtSampleInfohashesPayload;
         type DhtPktPayload = crate::ffi::dht::DhtPktPayload;
-        type DhtLiveNodes = crate::ffi::dht::DhtLiveNodes;
+        type DhtLiveNodesPayload = crate::ffi::dht::DhtLiveNodesPayload;
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
@@ -77,7 +85,7 @@ mod bridge {
         fn post_dht_stats(engine: &Engine) -> bool;
         fn post_dht_sample_infohashes(
             engine: &Engine,
-            endpoint: &UdpEndpoint,
+            endpoint: &UdpEndpointPayload,
             target: &[u8; 20],
         ) -> bool;
         fn post_dht_live_nodes(engine: &Engine) -> bool;
@@ -89,53 +97,29 @@ mod bridge {
 //===----------------------------------------------------------------------===//
 
 impl FfiEventSink {
-    fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
-        self.emit(event.into());
-    }
+    // Every payload has one explicit conversion to its corresponding domain event.
+    event_callback!(on_dht_announce, bridge::DhtAnnouncePayload);
+    event_callback!(on_metadata_received, bridge::MetadataReceivedPayload);
+    event_callback!(on_metadata_failed, bridge::MetadataFailedPayload);
+    event_callback!(on_dht_stats, bridge::DhtStatsPayload);
+    event_callback!(on_dht_get_peers, bridge::DhtGetPeersPayload);
+    event_callback!(on_add_torrent, bridge::AddTorrentPayload);
+    event_callback!(on_add_torrent_error, bridge::AddTorrentErrorPayload);
+    event_callback!(on_torrent_error, bridge::TorrentErrorPayload);
+    event_callback!(on_file_error, bridge::FileErrorPayload);
+    event_callback!(on_torrent_delete_failed, bridge::TorrentDeleteFailedPayload);
+    event_callback!(on_session_error, bridge::SessionErrorPayload);
+    event_callback!(on_listen_failed, bridge::ListenFailedPayload);
+    event_callback!(on_udp_error, bridge::UdpErrorPayload);
+    event_callback!(on_dht_error, bridge::DhtErrorPayload);
+    event_callback!(on_alerts_dropped, bridge::AlertsDroppedPayload);
+    event_callback!(on_dht_sample_infohashes, bridge::DhtSampleInfohashesPayload);
+    event_callback!(on_dht_pkt, bridge::DhtPktPayload);
+    event_callback!(on_dht_live_nodes, bridge::DhtLiveNodesPayload);
 
-    fn on_metadata_received(&mut self, event: bridge::MetadataReceivedPayload) {
-        self.emit(event.into());
-    }
-
-    info_message_callback!(on_metadata_failed, MetadataFailed);
-
-    fn on_dht_stats(&mut self, event: bridge::DhtStatsPayload) {
-        self.emit(event.into());
-    }
-
+    // Callbacks without a payload that emit a fixed domain event.
     fn on_dht_bootstrap(&mut self) {
         self.emit(BtEvent::DhtBootstrap);
-    }
-
-    fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
-        self.emit(event.into());
-    }
-
-    info_message_callback!(on_add_torrent, AddTorrent);
-
-    fn on_add_torrent_error(&mut self, event: bridge::AddTorrentErrorPayload) {
-        self.emit(event.into());
-    }
-
-    info_message_callback!(on_torrent_error, TorrentError);
-    info_message_callback!(on_file_error, FileError);
-    info_message_callback!(on_torrent_delete_failed, TorrentDeleteFailed);
-    message_callback!(on_session_error, SessionError);
-    message_callback!(on_listen_failed, ListenFailed);
-    message_callback!(on_udp_error, UdpError);
-    message_callback!(on_dht_error, DhtError);
-    message_callback!(on_alerts_dropped, AlertsDropped);
-
-    fn on_dht_sample_infohashes(&mut self, event: bridge::DhtSampleInfohashesPayload) {
-        self.emit(event.into());
-    }
-
-    fn on_dht_pkt(&mut self, event: bridge::DhtPktPayload) {
-        self.emit(event.into());
-    }
-
-    fn on_dht_live_nodes(&mut self, event: bridge::DhtLiveNodes) {
-        self.emit(event.into());
     }
 }
 
@@ -187,7 +171,7 @@ pub(super) fn post_dht_sample_infohashes(
 ) -> bool {
     bridge::post_dht_sample_infohashes(
         &engine.inner,
-        &UdpEndpoint::from_socket_addr(endpoint),
+        &UdpEndpointPayload::from_socket_addr(endpoint),
         target.as_bytes(),
     )
 }
