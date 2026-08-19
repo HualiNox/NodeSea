@@ -1,3 +1,5 @@
+//! Private macros for repetitive CXX callback dispatch glue.
+
 macro_rules! info_message_callback {
     ($method:ident, $variant:ident) => {
         fn $method(&mut self, event: bridge::InfoMessagePayload) {

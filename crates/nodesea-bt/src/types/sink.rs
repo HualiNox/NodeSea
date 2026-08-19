@@ -1,3 +1,5 @@
+//! Public event sink traits and in-memory event collection.
+
 use super::event::BtEvent;
 
 /// Receives events produced by the BitTorrent engine.
@@ -12,6 +14,7 @@ pub trait EventSink {
 /// A simple event sink that stores received events in a vector.
 #[derive(Debug, Default)]
 pub struct EventCollector {
+    /// Buffered domain events in arrival order.
     events: Vec<BtEvent>,
 }
 

@@ -71,10 +71,15 @@ mod bridge {
     /// This alert contains sampled infohashes and DHT nodes from a BEP 51
     /// DHT request.
     pub(super) struct DhtSampleInfohashesPayload {
+        /// Remote DHT node that returned the sample.
         node: DhtNodePayload,
+        /// Minimum interval before querying this node again, in seconds.
         interval_secs: i64,
+        /// Number of infohashes currently stored by the remote node.
         num_infohashes: i32,
+        /// Sampled infohashes represented through the CXX fixed-array adapter.
         samples: Vec<SampleInfoHash>,
+        /// Additional DHT nodes returned for key-space traversal.
         nodes: Vec<DhtNodePayload>,
     }
 
@@ -82,8 +87,11 @@ mod bridge {
     ///
     /// This alert contains a raw DHT packet for diagnostics.
     pub(super) struct DhtPktPayload {
+        /// Direction in which the packet crossed the DHT socket.
         direction: DhtDirectionPayload,
+        /// Remote DHT endpoint associated with the packet.
         endpoint: UdpEndpoint,
+        /// Verbatim packet bytes.
         packet: Vec<u8>,
     }
 

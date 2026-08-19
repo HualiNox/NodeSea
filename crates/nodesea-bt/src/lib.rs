@@ -11,7 +11,9 @@ pub use types::{
 
 /// A BitTorrent engine backed by a libtorrent session.
 pub struct Engine {
+    /// Rust facade around the private native CXX engine.
     inner: ffi::Engine,
+    /// Events buffered by single-event polling.
     buffer: VecDeque<BtEvent>,
 }
 

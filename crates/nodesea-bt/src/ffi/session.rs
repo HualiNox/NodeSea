@@ -4,6 +4,7 @@
 mod bridge {
     /// Payload containing a session or protocol error message.
     pub(super) struct MessagePayload {
+        /// Human-readable error description.
         message: String,
     }
 }

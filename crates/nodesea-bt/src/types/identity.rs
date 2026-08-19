@@ -1,3 +1,5 @@
+//! Domain identity types used by the BitTorrent and DHT layers.
+
 use std::fmt::{self, Display};
 use std::str::FromStr;
 

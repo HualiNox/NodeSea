@@ -6,21 +6,29 @@ use crate::{BtEvent, InfoHash};
 mod bridge {
     /// Payload for a metadata-received alert.
     pub(super) struct MetadataReceivedPayload {
+        /// Torrent info hash associated with the metadata.
         info_hash: [u8; 20],
+        /// Bencoded torrent metadata bytes.
         data: Vec<u8>,
     }
 
     /// Payload containing a torrent info hash and message.
     pub(super) struct InfoMessagePayload {
+        /// Torrent info hash associated with the alert.
         info_hash: [u8; 20],
+        /// Human-readable alert message.
         message: String,
     }
 
     /// Payload for a failed torrent-add operation.
     pub(super) struct AddTorrentErrorPayload {
+        /// Torrent info hash supplied to the add operation.
         info_hash: [u8; 20],
+        /// Human-readable failure description.
         message: String,
+        /// Numeric libtorrent error value.
         error_value: i32,
+        /// Name of the libtorrent error category.
         error_category: String,
     }
 }

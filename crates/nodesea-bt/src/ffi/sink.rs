@@ -1,8 +1,12 @@
+//! Rust-owned synchronous adapter used by the private CXX callback bridge.
+
 use crate::{BtEvent, EventSink};
 
 /// Rust-owned adapter passed to C++ for synchronous alert dispatch.
 pub(super) struct FfiEventSink {
+    /// Erased pointer to the concrete Rust event sink.
     data: *mut (),
+    /// Type-specialized callback used to restore the erased sink type.
     emit_fn: unsafe fn(*mut (), BtEvent),
 }
 

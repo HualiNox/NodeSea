@@ -2,12 +2,19 @@
 use nodesea_bt::{BtEvent, DhtTarget, Engine, EventSink, InfoHash};
 use std::{collections::HashSet, net::SocketAddr};
 
+/// Example event sink that observes DHT activity and schedules metadata
+/// requests for discovered infohashes.
 struct Observer {
+    /// Infohashes waiting for metadata fetches.
     pending: Vec<InfoHash>,
+    /// Infohashes already seen through DHT announce/get-peers events.
     seen: HashSet<InfoHash>,
+    /// DHT endpoints discovered from live-node snapshots.
     nodes: HashSet<SocketAddr>,
+    /// Endpoints sampled once by this example.
     sampled: HashSet<SocketAddr>,
 
+    /// Whether the initial DHT bootstrap event has been observed.
     dht_bootstrapped: bool,
 }
 

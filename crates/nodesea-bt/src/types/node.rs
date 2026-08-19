@@ -1,3 +1,5 @@
+//! Domain representation of a DHT node and its endpoint.
+
 use std::net::SocketAddr;
 
 use super::identity::NodeId;
