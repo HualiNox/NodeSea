@@ -12,6 +12,12 @@ fn json_string(value: impl AsRef<str>) -> String {
 }
 
 const CPP_SOURCES: &[&str] = &["cpp/engine.cpp", "cpp/helper.cpp"];
+const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
+    "src/ffi.rs",
+    "src/ffi/dht.rs",
+    "src/ffi/session.rs",
+    "src/ffi/torrent.rs",
+];
 const BENCH_CPP_SOURCE: &str = "benches/support/cpp/bench.cpp";
 const HEADER_SOURCES: &[&str] = &[
     "include/nodesea_bt/engine.hpp",
@@ -50,11 +56,10 @@ fn main() {
     // a system/Homebrew Boost installation.
     cxx_build::CFG.include_prefix = "";
     let bench_internals = env::var_os("CARGO_FEATURE_BENCH_INTERNALS").is_some();
-    let bridge_sources = if bench_internals {
-        vec!["src/ffi.rs", "benches/support/ffi_bridge.rs"]
-    } else {
-        vec!["src/ffi.rs"]
-    };
+    let mut bridge_sources = PRODUCTION_BRIDGE_SOURCES.to_vec();
+    if bench_internals {
+        bridge_sources.push("benches/support/ffi_bridge.rs");
+    }
     let mut bridge = cxx_build::bridges(bridge_sources);
 
     // Keep production sources explicit. Benchmark code is added only for the
@@ -109,13 +114,15 @@ fn main() {
     );
     fs::write(compile_commands, format!("[{}]", command)).unwrap();
 
-    // Keep a stable copy for clangd. The real CXX header lives under Cargo's
+    // Keep stable copies for clangd. The real CXX headers live under Cargo's
     // hash-based OUT_DIR, which is not practical to reference from an editor.
-    let generated_header =
-        Path::new(&env::var("OUT_DIR").unwrap()).join("cxxbridge/include/src/ffi.rs.h");
-    let editor_header = editor_include.join("src/ffi.rs.h");
-    fs::create_dir_all(editor_header.parent().unwrap()).unwrap();
-    fs::copy(generated_header, editor_header).unwrap();
+    let generated_include = Path::new(&env::var("OUT_DIR").unwrap()).join("cxxbridge/include");
+    for source in PRODUCTION_BRIDGE_SOURCES {
+        let generated_header = generated_include.join(format!("{source}.h"));
+        let editor_header = editor_include.join(format!("{source}.h"));
+        fs::create_dir_all(editor_header.parent().unwrap()).unwrap();
+        fs::copy(generated_header, editor_header).unwrap();
+    }
 
     if bench_internals {
         let generated_bench_header = Path::new(&env::var("OUT_DIR").unwrap())
@@ -164,6 +171,8 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=src/ffi.rs");
+    println!("cargo:rerun-if-changed=src/ffi");
+    println!("cargo:rerun-if-changed=src/types");
     println!("cargo:rerun-if-changed=benches/support/ffi_bridge.rs");
     for source in CPP_SOURCES {
         println!("cargo:rerun-if-changed={source}");

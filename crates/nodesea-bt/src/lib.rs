@@ -2,289 +2,14 @@
 #![warn(missing_docs)]
 
 use std::collections::VecDeque;
-use std::fmt;
-use std::str::FromStr;
-
 mod ffi;
+mod types;
 
-/// Represents a Bittorrent event.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BtEvent {
-    /// A DHT announce event was received.
-    DhtAnnounce {
-        /// Info hash associated with the announce request.
-        info_hash: InfoHash,
-        /// Address of the announcing peer.
-        peer_ip: String,
-        /// Port of the announcing peer.
-        peer_port: u16,
-    },
-
-    /// Metadata was successfully received.
-    MetadataReceived {
-        /// Info hash of the torrent whose metadata was received.
-        info_hash: InfoHash,
-        /// Bencoded torrent info section.
-        data: Vec<u8>,
-    },
-
-    /// Metadata failed to be received.
-    MetadataFailed {
-        /// Info hash of the torrent whose metadata request failed.
-        info_hash: InfoHash,
-        /// Failure description reported by libtorrent.
-        message: String,
-    },
-
-    /// The DHT stats event containing the number of nodes.
-    DhtStats {
-        /// Number of nodes currently present in the DHT routing table.
-        node_count: u32,
-        /// Local IP address used for DHT operations.
-        local_ip: String,
-        /// Local port used for DHT operations.
-        local_port: u16,
-    },
-
-    /// The DHT bootstrap process has completed.
-    DhtBootstrap,
-
-    /// A DHT get peers event was received.
-    DhtGetPeers {
-        /// Info hash associated with the get peers request.
-        info_hash: InfoHash,
-    },
-
-    /// A torrent was added successfully.
-    AddTorrent {
-        /// Info hash of the added torrent.
-        info_hash: InfoHash,
-        /// Status message reported by libtorrent.
-        message: String,
-    },
-
-    /// Adding a torrent failed.
-    AddTorrentError {
-        /// Info hash supplied to the add operation.
-        info_hash: InfoHash,
-        /// Failure description reported by libtorrent.
-        message: String,
-        /// Numeric value of the libtorrent error code.
-        error_value: i32,
-        /// Error category name returned by libtorrent.
-        error_category: String,
-    },
-
-    /// A torrent entered an error state.
-    TorrentError {
-        /// Info hash of the torrent in error.
-        info_hash: InfoHash,
-        /// Error description reported by libtorrent.
-        message: String,
-    },
-
-    /// A file operation failed for a torrent.
-    FileError {
-        /// Info hash of the affected torrent.
-        info_hash: InfoHash,
-        /// Error description reported by libtorrent.
-        message: String,
-    },
-
-    /// Deleting a torrent failed.
-    TorrentDeleteFailed {
-        /// Info hash of the torrent that could not be deleted.
-        info_hash: InfoHash,
-        /// Failure description reported by libtorrent.
-        message: String,
-    },
-
-    /// The session reported an error.
-    SessionError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
-
-    /// Listening on the configured port failed.
-    ListenFailed {
-        /// Failure description reported by libtorrent.
-        message: String,
-    },
-
-    /// A UDP operation failed.
-    UdpError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
-
-    /// A DHT operation failed.
-    DhtError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
-
-    /// The session dropped alerts before they were polled.
-    AlertsDropped {
-        /// Description of the dropped-alert condition.
-        message: String,
-    },
-}
-
-/// Receives events produced by the BitTorrent engine.
-pub trait EventSink {
-    /// Handles one event synchronously.
-    ///
-    /// The event is owned by the sink after this call returns. Implementations
-    /// should not retain references into the FFI payload because the payload
-    /// is dropped when the callback returns.
-    fn on_event(&mut self, event: BtEvent);
-}
-
-/// A simple event sink that stores received events in a vector.
-#[derive(Debug, Default)]
-pub struct EventCollector {
-    events: Vec<BtEvent>,
-}
-
-impl EventSink for EventCollector {
-    fn on_event(&mut self, event: BtEvent) {
-        self.events.push(event);
-    }
-}
-
-impl EventCollector {
-    /// Creates a new, empty event collector.
-    pub fn new() -> Self {
-        Self { events: Vec::new() }
-    }
-
-    /// Creates a new event collector with the specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            events: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Returns a slice of the collected events.
-    pub fn events(&self) -> &[BtEvent] {
-        &self.events
-    }
-
-    /// Takes the collected events out of the collector, leaving it empty.
-    pub fn take_events(&mut self) -> Vec<BtEvent> {
-        std::mem::take(&mut self.events)
-    }
-
-    /// Clears the collector.
-    pub fn clear(&mut self) {
-        self.events.clear();
-    }
-}
-
-/// Represents a 20-byte info hash.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct InfoHash([u8; 20]);
-
-impl InfoHash {
-    /// Creates an info hash from a 20-byte array.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - The 20-byte array to create the info hash from.
-    ///
-    /// # Returns
-    ///
-    /// The created info hash.
-    pub const fn from_bytes(bytes: [u8; 20]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the info hash as a byte slice.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the 20-byte array representing the info hash.
-    pub const fn as_bytes(&self) -> &[u8; 20] {
-        &self.0
-    }
-
-    /// Returns the info hash as a hex string.
-    ///
-    /// # Returns
-    ///
-    /// The hex-encoded representation of the info hash.
-    pub fn to_hex(&self) -> String {
-        hex::encode(self.as_bytes())
-    }
-
-    /// Creates an info hash from a hex string.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The hex string to parse into an info hash.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(InfoHash)` if the hex string was successfully decoded, or `Err` if decoding failed.
-    pub fn from_hex(s: &str) -> Result<Self, hex::FromHexError> {
-        let mut bytes = [0u8; 20];
-        hex::decode_to_slice(s, &mut bytes)?;
-        Ok(Self(bytes))
-    }
-}
-
-impl FromStr for InfoHash {
-    type Err = hex::FromHexError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_hex(s)
-    }
-}
-
-impl TryFrom<&str> for InfoHash {
-    type Error = hex::FromHexError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::from_hex(value)
-    }
-}
-
-impl TryFrom<&[u8]> for InfoHash {
-    type Error = std::array::TryFromSliceError;
-
-    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
-        let bytes: [u8; 20] = slice.try_into()?;
-        Ok(Self(bytes))
-    }
-}
-
-impl fmt::Debug for InfoHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "InfoHash({})", self.to_hex())
-    }
-}
-
-impl fmt::Display for InfoHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
-    }
-}
-
-impl From<[u8; 20]> for InfoHash {
-    fn from(bytes: [u8; 20]) -> Self {
-        Self(bytes)
-    }
-}
-
-impl AsRef<[u8; 20]> for InfoHash {
-    fn as_ref(&self) -> &[u8; 20] {
-        &self.0
-    }
-}
+pub use types::{BtEvent, DhtNode, EventCollector, EventSink, InfoHash, NodeId};
 
 /// A BitTorrent engine backed by a libtorrent session.
 pub struct Engine {
-    inner: cxx::UniquePtr<ffi::Engine>,
+    inner: ffi::Engine,
     buffer: VecDeque<BtEvent>,
 }
 
@@ -295,15 +20,10 @@ impl Engine {
     ///
     /// `None` if the underlying C++ engine could not be created.
     pub fn new() -> Option<Self> {
-        let inner = ffi::new_engine();
-        if inner.is_null() {
-            None
-        } else {
-            Some(Self {
-                inner,
-                buffer: VecDeque::new(),
-            })
-        }
+        ffi::new_engine().map(|inner| Self {
+            inner,
+            buffer: VecDeque::new(),
+        })
     }
 
     /// Polls for a batch of events and sends them to the supplied sink.
@@ -323,8 +43,7 @@ impl Engine {
             dispatched += 1;
         }
 
-        let mut ffi_sink = ffi::FfiEventSink::new(sink);
-        dispatched + ffi::poll_events(self.inner.pin_mut(), &mut ffi_sink)
+        dispatched + ffi::poll_events(&mut self.inner, sink)
     }
 
     /// Polls for the next single event from the BitTorrent engine.
@@ -344,8 +63,7 @@ impl Engine {
             let mut queue_sink = QueueSink {
                 buffer: &mut self.buffer,
             };
-            let mut ffi_sink = ffi::FfiEventSink::new(&mut queue_sink);
-            ffi::poll_events(self.inner.pin_mut(), &mut ffi_sink);
+            ffi::poll_events(&mut self.inner, &mut queue_sink);
         }
 
         self.buffer.pop_front()
@@ -361,8 +79,7 @@ impl Engine {
     ///
     /// `true` if the fetch request was successfully initiated, `false` otherwise.
     pub fn fetch_metadata(&mut self, info_hash: &InfoHash) -> bool {
-        let pin = self.inner.pin_mut();
-        ffi::fetch_metadata(pin, info_hash.as_bytes())
+        ffi::fetch_metadata(&mut self.inner, info_hash)
     }
 
     /// Cancels a metadata fetch request for a torrent using its info hash.
@@ -375,8 +92,7 @@ impl Engine {
     ///
     /// `true` if the cancellation request was successfully initiated, `false` otherwise.
     pub fn cancel_fetch_metadata(&mut self, info_hash: &InfoHash) -> bool {
-        let pin = self.inner.pin_mut();
-        ffi::cancel_fetch(pin, info_hash.as_bytes())
+        ffi::cancel_fetch(&mut self.inner, info_hash)
     }
 
     /// Requests an asynchronous DHT statistics alert.

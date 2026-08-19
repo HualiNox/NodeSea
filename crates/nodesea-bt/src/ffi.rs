@@ -1,36 +1,25 @@
-use crate::{BtEvent, EventSink};
+//! Private CXX bridges and the small Rust facade used by the domain layer.
 
-/// Rust-owned adapter passed to C++ for synchronous alert dispatch.
-pub(crate) struct FfiEventSink {
-    data: *mut (),
-    emit_fn: unsafe fn(*mut (), BtEvent),
-}
+//===----------------------------------------------------------------------===//
+// Private bridge modules
+//===----------------------------------------------------------------------===//
 
-impl FfiEventSink {
-    /// Creates a synchronous adapter for a concrete Rust event sink.
-    ///
-    /// The raw pointer is valid only while the caller is inside the native
-    /// `poll_events` call; C++ must not store the adapter or invoke it later.
-    pub(crate) fn new<S: EventSink>(sink: &mut S) -> Self {
-        Self {
-            data: sink as *mut S as *mut (),
-            emit_fn: emit::<S>,
-        }
-    }
+#[macro_use]
+mod macros;
+mod dht;
+mod session;
+mod sink;
+mod torrent;
 
-    fn emit(&mut self, event: BtEvent) {
-        // The adapter is created and borrowed only for the duration of one
-        // synchronous poll_events call. C++ never stores this pointer.
-        unsafe { (self.emit_fn)(self.data, event) }
-    }
-}
+use crate::{BtEvent, EventSink, InfoHash};
+use sink::FfiEventSink;
 
-unsafe fn emit<S: EventSink>(data: *mut (), event: BtEvent) {
-    // `data` points to the `S` passed to `FfiEventSink::new`. The adapter is
-    // used synchronously, so that value remains valid for every callback.
-    unsafe { (&mut *data.cast::<S>()).on_event(event) };
-}
+//===----------------------------------------------------------------------===//
+// Canonical Engine and callback bridge
+//===----------------------------------------------------------------------===//
 
+/// The canonical bridge owns the native Engine binding and the one C++ sink
+/// type. Domain-specific wire payloads are owned by the private child bridges.
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
     extern "Rust" {
@@ -54,101 +43,48 @@ mod bridge {
         fn on_alerts_dropped(self: &mut FfiEventSink, event: MessagePayload);
     }
 
-    /// Payload for a DHT announce alert.
-    pub(crate) struct DhtAnnouncePayload {
-        info_hash: [u8; 20],
-        peer_ip: String,
-        peer_port: u16,
-    }
-
-    /// Payload for a metadata-received alert.
-    pub(crate) struct MetadataReceivedPayload {
-        info_hash: [u8; 20],
-        data: Vec<u8>,
-    }
-
-    /// Payload containing an info hash and message.
-    pub(crate) struct InfoMessagePayload {
-        info_hash: [u8; 20],
-        message: String,
-    }
-
-    /// Payload containing a message only.
-    pub(crate) struct MessagePayload {
-        message: String,
-    }
-
-    /// Payload for DHT statistics.
-    pub(crate) struct DhtStatsPayload {
-        node_count: u32,
-        local_ip: String,
-        local_port: u16,
-    }
-
-    /// Payload for a DHT get peers alert.
-    pub(crate) struct DhtGetPeersPayload {
-        info_hash: [u8; 20],
-    }
-
-    /// Payload for a failed torrent-add operation.
-    pub(crate) struct AddTorrentErrorPayload {
-        info_hash: [u8; 20],
-        message: String,
-        error_value: i32,
-        error_category: String,
-    }
-
     unsafe extern "C++" {
+        include!("src/ffi/dht.rs.h");
+        include!("src/ffi/session.rs.h");
+        include!("src/ffi/torrent.rs.h");
         include!("nodesea_bt/engine.hpp");
 
+        type DhtAnnouncePayload = crate::ffi::dht::DhtAnnouncePayload;
+        type DhtStatsPayload = crate::ffi::dht::DhtStatsPayload;
+        type DhtGetPeersPayload = crate::ffi::dht::DhtGetPeersPayload;
+        type MetadataReceivedPayload = crate::ffi::torrent::MetadataReceivedPayload;
+        type InfoMessagePayload = crate::ffi::torrent::InfoMessagePayload;
+        type AddTorrentErrorPayload = crate::ffi::torrent::AddTorrentErrorPayload;
+        type MessagePayload = crate::ffi::session::MessagePayload;
+
+        /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
 
-        /// Creates a new BitTorrent engine instance.
         fn new_engine() -> UniquePtr<Engine>;
-
-        /// Polls alerts and dispatches each one to the supplied Rust sink.
         fn poll_events(engine: Pin<&mut Engine>, sink: &mut FfiEventSink) -> usize;
-
-        /// Fetches metadata for a torrent identified by its info hash.
         fn fetch_metadata(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
-
-        /// Cancels metadata fetching for a torrent identified by its info hash.
         fn cancel_fetch(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
-
-        /// Requests an asynchronous DHT statistics alert.
         fn post_dht_stats(engine: &Engine) -> bool;
     }
 }
 
+//===----------------------------------------------------------------------===//
+// Callback dispatch
+//===----------------------------------------------------------------------===//
+
 impl FfiEventSink {
     fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
-        self.emit(BtEvent::DhtAnnounce {
-            info_hash: event.info_hash.into(),
-            peer_ip: event.peer_ip,
-            peer_port: event.peer_port,
-        });
+        self.emit(event.into());
     }
 
     fn on_metadata_received(&mut self, event: bridge::MetadataReceivedPayload) {
-        self.emit(BtEvent::MetadataReceived {
-            info_hash: event.info_hash.into(),
-            data: event.data,
-        });
+        self.emit(event.into());
     }
 
-    fn on_metadata_failed(&mut self, event: bridge::InfoMessagePayload) {
-        self.emit(BtEvent::MetadataFailed {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-        });
-    }
+    info_message_callback!(on_metadata_failed, MetadataFailed);
 
     fn on_dht_stats(&mut self, event: bridge::DhtStatsPayload) {
-        self.emit(BtEvent::DhtStats {
-            node_count: event.node_count,
-            local_ip: event.local_ip,
-            local_port: event.local_port,
-        });
+        self.emit(event.into());
     }
 
     fn on_dht_bootstrap(&mut self) {
@@ -156,77 +92,61 @@ impl FfiEventSink {
     }
 
     fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
-        self.emit(BtEvent::DhtGetPeers {
-            info_hash: event.info_hash.into(),
-        });
+        self.emit(event.into());
     }
 
-    fn on_add_torrent(&mut self, event: bridge::InfoMessagePayload) {
-        self.emit(BtEvent::AddTorrent {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-        });
-    }
+    info_message_callback!(on_add_torrent, AddTorrent);
 
     fn on_add_torrent_error(&mut self, event: bridge::AddTorrentErrorPayload) {
-        self.emit(BtEvent::AddTorrentError {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-            error_value: event.error_value,
-            error_category: event.error_category,
-        });
+        self.emit(event.into());
     }
 
-    fn on_torrent_error(&mut self, event: bridge::InfoMessagePayload) {
-        self.emit(BtEvent::TorrentError {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-        });
-    }
-
-    fn on_file_error(&mut self, event: bridge::InfoMessagePayload) {
-        self.emit(BtEvent::FileError {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-        });
-    }
-
-    fn on_torrent_delete_failed(&mut self, event: bridge::InfoMessagePayload) {
-        self.emit(BtEvent::TorrentDeleteFailed {
-            info_hash: event.info_hash.into(),
-            message: event.message,
-        });
-    }
-
-    fn on_session_error(&mut self, event: bridge::MessagePayload) {
-        self.emit(BtEvent::SessionError {
-            message: event.message,
-        });
-    }
-
-    fn on_listen_failed(&mut self, event: bridge::MessagePayload) {
-        self.emit(BtEvent::ListenFailed {
-            message: event.message,
-        });
-    }
-
-    fn on_udp_error(&mut self, event: bridge::MessagePayload) {
-        self.emit(BtEvent::UdpError {
-            message: event.message,
-        });
-    }
-
-    fn on_dht_error(&mut self, event: bridge::MessagePayload) {
-        self.emit(BtEvent::DhtError {
-            message: event.message,
-        });
-    }
-
-    fn on_alerts_dropped(&mut self, event: bridge::MessagePayload) {
-        self.emit(BtEvent::AlertsDropped {
-            message: event.message,
-        });
-    }
+    info_message_callback!(on_torrent_error, TorrentError);
+    info_message_callback!(on_file_error, FileError);
+    info_message_callback!(on_torrent_delete_failed, TorrentDeleteFailed);
+    message_callback!(on_session_error, SessionError);
+    message_callback!(on_listen_failed, ListenFailed);
+    message_callback!(on_udp_error, UdpError);
+    message_callback!(on_dht_error, DhtError);
+    message_callback!(on_alerts_dropped, AlertsDropped);
 }
 
-pub(crate) use bridge::*;
+//===----------------------------------------------------------------------===//
+// Rust-owned native wrapper
+//===----------------------------------------------------------------------===//
+
+/// Rust-owned wrapper around the private generated CXX Engine binding.
+pub(super) struct Engine {
+    inner: cxx::UniquePtr<bridge::Engine>,
+}
+
+//===----------------------------------------------------------------------===//
+// Rust FFI facade
+//===----------------------------------------------------------------------===//
+
+/// Creates a Rust-owned wrapper around the native engine.
+pub(super) fn new_engine() -> Option<Engine> {
+    let inner = bridge::new_engine();
+    (!inner.is_null()).then_some(Engine { inner })
+}
+
+/// Polls native alerts and dispatches them to the supplied domain sink.
+pub(super) fn poll_events<S: EventSink>(engine: &mut Engine, sink: &mut S) -> usize {
+    let mut ffi_sink = FfiEventSink::new(sink);
+    bridge::poll_events(engine.inner.pin_mut(), &mut ffi_sink)
+}
+
+/// Starts metadata fetching for an info hash.
+pub(super) fn fetch_metadata(engine: &mut Engine, info_hash: &InfoHash) -> bool {
+    bridge::fetch_metadata(engine.inner.pin_mut(), info_hash.as_bytes())
+}
+
+/// Cancels metadata fetching for an info hash.
+pub(super) fn cancel_fetch(engine: &mut Engine, info_hash: &InfoHash) -> bool {
+    bridge::cancel_fetch(engine.inner.pin_mut(), info_hash.as_bytes())
+}
+
+/// Requests an asynchronous DHT statistics alert.
+pub(super) fn post_dht_stats(engine: &Engine) -> bool {
+    bridge::post_dht_stats(&engine.inner)
+}

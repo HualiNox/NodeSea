@@ -5,6 +5,9 @@
 
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
+#include "src/ffi/dht.rs.h"
+#include "src/ffi/session.rs.h"
+#include "src/ffi/torrent.rs.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -104,7 +107,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::dht_announce_alert*>(alert);
 
       sink.on_dht_announce(DhtAnnouncePayload{
-          .info_hash = digest_to_array(a->info_hash),
+          .info_hash =
+              DhtInfoHash{
+                  .bytes = digest_to_array(a->info_hash),
+              },
           .peer_ip = rust::String(a->ip.to_string()),
           .peer_port = static_cast<std::uint16_t>(a->port),
       });
@@ -128,7 +134,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
         }
       }
       sink.on_metadata_received(MetadataReceivedPayload{
-          .info_hash = hash,
+          .info_hash =
+              TorrentInfoHash{
+                  .bytes = hash,
+              },
           .data = std::move(data),
       });
 
@@ -146,7 +155,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::metadata_failed_alert*>(alert);
 
       sink.on_metadata_failed(InfoMessagePayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .info_hash =
+              TorrentInfoHash{
+                  .bytes = digest_to_array(a->handle.info_hash()),
+              },
           .message = rust::String(a->message()),
       });
 
@@ -191,7 +203,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::dht_get_peers_alert*>(alert);
 
       sink.on_dht_get_peers(DhtGetPeersPayload{
-          .info_hash = digest_to_array(a->info_hash),
+          .info_hash =
+              DhtInfoHash{
+                  .bytes = digest_to_array(a->info_hash),
+              },
       });
 
       ++dispatched;
@@ -271,12 +286,18 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto hash = digest_to_array(a->params.info_hashes.get_best());
       if (a->error == lt::errors::no_error) {
         sink.on_add_torrent(InfoMessagePayload{
-            .info_hash = hash,
+            .info_hash =
+                TorrentInfoHash{
+                    .bytes = hash,
+                },
             .message = rust::String(a->message()),
         });
       } else {
         sink.on_add_torrent_error(AddTorrentErrorPayload{
-            .info_hash = hash,
+            .info_hash =
+                TorrentInfoHash{
+                    .bytes = hash,
+                },
             .message = rust::String(a->message()),
             .error_value = static_cast<std::int32_t>(a->error.value()),
             .error_category = rust::String(a->error.category().name()),
@@ -293,7 +314,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::torrent_error_alert*>(alert);
 
       sink.on_torrent_error(InfoMessagePayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .info_hash =
+              TorrentInfoHash{
+                  .bytes = digest_to_array(a->handle.info_hash()),
+              },
           .message = rust::String(a->message()),
       });
 
@@ -307,7 +331,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::file_error_alert*>(alert);
 
       sink.on_file_error(InfoMessagePayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .info_hash =
+              TorrentInfoHash{
+                  .bytes = digest_to_array(a->handle.info_hash()),
+              },
           .message = rust::String(a->message()),
       });
 
@@ -321,7 +348,10 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::torrent_delete_failed_alert*>(alert);
 
       sink.on_torrent_delete_failed(InfoMessagePayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .info_hash =
+              TorrentInfoHash{
+                  .bytes = digest_to_array(a->handle.info_hash()),
+              },
           .message = rust::String(a->message()),
       });
 

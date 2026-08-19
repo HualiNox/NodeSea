@@ -1,14 +1,14 @@
 use nodesea_bt::{BtEvent, EventSink};
 
 /// Rust-owned adapter used only by the benchmark bridge.
-pub(crate) struct FfiBenchSink {
+pub(super) struct FfiBenchSink {
     data: *mut (),
     emit_fn: unsafe fn(*mut (), BtEvent),
 }
 
 impl FfiBenchSink {
     /// Creates a synchronous benchmark callback adapter.
-    pub(crate) fn new<S: EventSink>(sink: &mut S) -> Self {
+    pub(super) fn new<S: EventSink>(sink: &mut S) -> Self {
         Self {
             data: sink as *mut S as *mut (),
             emit_fn: emit::<S>,
@@ -33,14 +33,19 @@ mod bridge {
         fn on_dht_announce(self: &mut FfiBenchSink, event: DhtAnnouncePayload);
     }
 
+    /// A wire-level 20-byte torrent identity used by the benchmark bridge.
+    struct InfoHash {
+        bytes: [u8; 20],
+    }
+
     /// Payload for a benchmarked DHT get-peers event.
-    pub(crate) struct DhtGetPeersPayload {
-        info_hash: [u8; 20],
+    pub(super) struct DhtGetPeersPayload {
+        info_hash: InfoHash,
     }
 
     /// Payload for a benchmarked DHT announce event.
-    pub(crate) struct DhtAnnouncePayload {
-        info_hash: [u8; 20],
+    pub(super) struct DhtAnnouncePayload {
+        info_hash: InfoHash,
         peer_ip: String,
         peer_port: u16,
     }
@@ -59,17 +64,17 @@ mod bridge {
 impl FfiBenchSink {
     fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
         self.emit(BtEvent::DhtGetPeers {
-            info_hash: event.info_hash.into(),
+            info_hash: event.info_hash.bytes.into(),
         });
     }
 
     fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
         self.emit(BtEvent::DhtAnnounce {
-            info_hash: event.info_hash.into(),
+            info_hash: event.info_hash.bytes.into(),
             peer_ip: event.peer_ip,
             peer_port: event.peer_port,
         });
     }
 }
 
-pub(crate) use bridge::{bench_dht_announce_batch, bench_dht_get_peers_batch};
+pub(super) use bridge::{bench_dht_announce_batch, bench_dht_get_peers_batch};

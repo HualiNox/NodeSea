@@ -15,7 +15,10 @@ std::size_t bench_dht_get_peers_batch(FfiBenchSink& sink, std::size_t count) {
 
   for (std::size_t i = 0; i < count; ++i) {
     sink.on_dht_get_peers(DhtGetPeersPayload{
-        .info_hash = hash,
+        .info_hash =
+            InfoHash{
+                .bytes = hash,
+            },
     });
   }
 
@@ -27,7 +30,10 @@ std::size_t bench_dht_announce_batch(FfiBenchSink& sink, std::size_t count) {
 
   for (std::size_t i = 0; i < count; ++i) {
     sink.on_dht_announce(DhtAnnouncePayload{
-        .info_hash = hash,
+        .info_hash =
+            InfoHash{
+                .bytes = hash,
+            },
         .peer_ip = rust::String("192.168.1.10"),
         .peer_port = 6881,
     });
