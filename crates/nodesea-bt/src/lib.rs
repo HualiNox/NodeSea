@@ -1,11 +1,13 @@
 //! Rust bindings and event model for the Nodesea BitTorrent engine.
 #![warn(missing_docs)]
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, net::SocketAddr};
 mod ffi;
 mod types;
 
-pub use types::{BtEvent, DhtNode, EventCollector, EventSink, InfoHash, NodeId};
+pub use types::{
+    BtEvent, DhtDirection, DhtNode, DhtTarget, EventCollector, EventSink, InfoHash, NodeId,
+};
 
 /// A BitTorrent engine backed by a libtorrent session.
 pub struct Engine {
@@ -104,6 +106,26 @@ impl Engine {
     /// The resulting node count is delivered later through [`BtEvent::DhtStats`].
     pub fn post_dht_stats(&self) -> bool {
         ffi::post_dht_stats(&self.inner)
+    }
+
+    /// Requests BEP 51 infohash samples from a remote DHT node.
+    ///
+    /// This request does not fetch torrent metadata. A successful response is
+    /// delivered later as [`BtEvent::DhtSampleInfohashes`].
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - The remote UDP endpoint to query.
+    /// * `target` - The key-space traversal target. It does not affect the
+    ///   samples returned by the remote node.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the request was accepted by the local native session, `false`
+    /// otherwise. It does not guarantee that the remote node supports BEP 51
+    /// or returns a response.
+    pub fn post_dht_sample_infohashes(&self, endpoint: &SocketAddr, target: &DhtTarget) -> bool {
+        ffi::post_dht_sample_infohashes(&self.inner, endpoint, target)
     }
 }
 

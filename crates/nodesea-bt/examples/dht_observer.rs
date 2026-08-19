@@ -1,10 +1,14 @@
 //! Simple observer example that polls and prints BitTorrent engine events.
-use nodesea_bt::{BtEvent, Engine, EventSink, InfoHash};
-use std::collections::HashSet;
+use nodesea_bt::{BtEvent, DhtTarget, Engine, EventSink, InfoHash};
+use std::{collections::HashSet, net::SocketAddr};
 
 struct Observer {
     pending: Vec<InfoHash>,
     seen: HashSet<InfoHash>,
+    nodes: HashSet<SocketAddr>,
+    sampled: HashSet<SocketAddr>,
+
+    dht_bootstrapped: bool,
 }
 
 impl EventSink for Observer {
@@ -42,8 +46,38 @@ impl EventSink for Observer {
 
             BtEvent::DhtBootstrap => {
                 println!("DHT bootstrap completed");
+                self.dht_bootstrapped = true;
             }
 
+            BtEvent::DhtSampleInfohashes {
+                node,
+                interval,
+                num_infohashes,
+                samples,
+                nodes,
+            } => {
+                println!(
+                    "dht sample: node={}, interval={:?}, num_infohashes={}, samples={}, nodes={}",
+                    node.endpoint,
+                    interval,
+                    num_infohashes,
+                    samples.len(),
+                    nodes.len()
+                );
+            }
+            BtEvent::DhtPkt {
+                endpoint,
+                direction,
+                packet,
+            } => {
+                self.nodes.insert(endpoint);
+                println!(
+                    "dht pkt: endpoint={}, direction={:?}, packet_len={}",
+                    endpoint,
+                    direction,
+                    packet.len()
+                );
+            }
             _ => {}
         }
     }
@@ -55,11 +89,30 @@ fn main() {
     let mut observer = Observer {
         pending: Vec::new(),
         seen: HashSet::new(),
+        dht_bootstrapped: false,
+        sampled: HashSet::new(),
+        nodes: HashSet::new(),
     };
 
     // Start polling loop
     loop {
         engine.post_dht_stats();
+
+        if observer.dht_bootstrapped {
+            if let Some(node) = observer
+                .nodes
+                .iter()
+                .find(|node| !observer.sampled.contains(node))
+                .copied()
+            {
+                println!("sampling from {node}");
+
+                if engine.post_dht_sample_infohashes(&node, &DhtTarget::from_bytes([0; 20])) {
+                    observer.sampled.insert(node);
+                }
+            }
+        }
+
         engine.poll_events(&mut observer);
 
         for hash in observer.pending.drain(..) {

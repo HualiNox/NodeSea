@@ -3,6 +3,8 @@
 
 #include "nodesea_bt/engine.hpp"
 
+#include "libtorrent/address.hpp"
+#include "libtorrent/time.hpp"
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
 #include "src/ffi/dht.rs.h"
@@ -48,6 +50,11 @@ constexpr std::string_view DHT_BOOTSTRAP_NODES = "dht.libtorrent.org:25401,"
                                                  "router.bittorrent.com:6881,"
                                                  "dht.transmissionbt.com:6881";
 
+// Alert categories to enable for the session.
+constexpr auto ALERT_CATEGORIES = lt::alert_category::dht | lt::alert_category::dht_log |
+                                  lt::alert_category::dht_operation | lt::alert_category::status |
+                                  lt::alert_category::error;
+
 // ----------------------------------------------------------------------------
 // Engine Implementation
 // -----------------------------------------------------------------------------
@@ -64,8 +71,7 @@ Engine::Engine() : impl_(std::make_unique<Impl>()) {
   lt::settings_pack sp;
 
   // Configure alert categories and enable DHT.
-  sp.set_int(lt::settings_pack::alert_mask,
-             lt::alert_category::dht | lt::alert_category::status | lt::alert_category::error);
+  sp.set_int(lt::settings_pack::alert_mask, ALERT_CATEGORIES);
 
   // Enable DHT.
   sp.set_bool(lt::settings_pack::enable_dht, true);
@@ -333,6 +339,79 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       break;
     }
 
+    // DHT sample infohashes alert.
+    case lt::dht_sample_infohashes_alert::alert_type: {
+      auto* a = static_cast<lt::dht_sample_infohashes_alert*>(alert);
+
+      // Convert libtorrent samples to private CXX wire payloads.
+      rust::Vec<SampleInfoHash> samples;
+      for (lt::sha1_hash sample : a->samples()) {
+        samples.push_back(SampleInfoHash{
+            .bytes = digest_to_array(sample),
+        });
+      }
+
+      // Convert response DHT nodes to private CXX wire payloads.
+      rust::Vec<DhtNodePayload> nodes;
+      for (auto node : a->nodes()) {
+        nodes.push_back(DhtNodePayload{
+            .node_id = digest_to_array(node.first),
+            .endpoint =
+                UdpEndpoint{
+                    .address = rust::String(node.second.address().to_string()),
+                    .port = static_cast<uint16_t>(node.second.port()),
+                },
+        });
+      }
+
+      sink.on_dht_sample_infohashes(DhtSampleInfohashesPayload{
+          .node =
+              DhtNodePayload{
+                  .node_id = digest_to_array(a->node_id),
+                  .endpoint =
+                      UdpEndpoint{
+                          .address = rust::String(a->endpoint.address().to_string()),
+                          .port = static_cast<std::uint16_t>(a->endpoint.port()),
+                      },
+              },
+          .interval_secs = lt::total_seconds(a->interval),
+          .num_infohashes = static_cast<std::int32_t>(a->num_infohashes),
+          .samples = std::move(samples),
+          .nodes = std::move(nodes),
+      });
+
+      ++dispatched;
+
+      break;
+    }
+
+    // DHT packet alert.
+    case lt::dht_pkt_alert::alert_type: {
+      auto* a = static_cast<lt::dht_pkt_alert*>(alert);
+
+      // Copy packet data from libtorrent to Rust Vec
+      rust::Vec<std::uint8_t> packet;
+      packet.reserve(a->pkt_buf().size());
+      for (char buf : a->pkt_buf()) {
+        packet.push_back(buf);
+      }
+
+      sink.on_dht_pkt(DhtPktPayload{
+          .direction = a->direction == lt::dht_pkt_alert::incoming ? DhtDirectionPayload::Incoming
+                                                                   : DhtDirectionPayload::Outgoing,
+          .endpoint =
+              UdpEndpoint{
+                  .address = rust::String(a->node.address().to_string()),
+                  .port = static_cast<std::uint16_t>(a->node.port()),
+              },
+          .packet = std::move(packet),
+      });
+
+      ++dispatched;
+
+      break;
+    }
+
     default:
       break;
     }
@@ -394,6 +473,29 @@ bool Engine::post_dht_stats() const {
   return true;
 }
 
+bool Engine::post_dht_sample_infohashes(const UdpEndpoint& endpoint,
+                                        const std::array<std::uint8_t, 20>& target) const {
+  if (!impl_->session_) {
+    return false;
+  }
+
+  // Convert Rust address string to libtorrent address.
+  lt::error_code ec;
+  lt::address endpoint_address = lt::make_address(std::string(endpoint.address), ec);
+  if (ec) {
+    return false;
+  }
+
+  // Create UDP endpoint.
+  const lt::udp::endpoint rp(endpoint_address, static_cast<std::uint16_t>(endpoint.port));
+
+  // Create target hash.
+  const lt::sha1_hash target_hash(reinterpret_cast<const char*>(target.data()));
+
+  impl_->session_->dht_sample_infohashes(rp, target_hash);
+  return true;
+}
+
 // -----------------------------------------------------------------------------
 // CXX FFI Bridge Functions
 // -----------------------------------------------------------------------------
@@ -412,6 +514,11 @@ bool cancel_fetch(Engine& engine, const std::array<std::uint8_t, 20>& info_hash)
 
 bool post_dht_stats(const Engine& engine) {
   return engine.post_dht_stats();
+}
+
+bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
+                                const std::array<std::uint8_t, 20>& target) {
+  return engine.post_dht_sample_infohashes(endpoint, target);
 }
 
 } // namespace nodesea::bt

@@ -11,7 +11,9 @@ mod session;
 mod sink;
 mod torrent;
 
-use crate::{BtEvent, EventSink, InfoHash};
+use std::net::SocketAddr;
+
+use crate::{BtEvent, DhtTarget, EventSink, InfoHash, ffi::dht::UdpEndpoint};
 use sink::FfiEventSink;
 
 //===----------------------------------------------------------------------===//
@@ -22,6 +24,7 @@ use sink::FfiEventSink;
 /// type. Domain-specific wire payloads are owned by the private child bridges.
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
+
     extern "Rust" {
         type FfiEventSink;
 
@@ -41,6 +44,8 @@ mod bridge {
         fn on_udp_error(self: &mut FfiEventSink, event: MessagePayload);
         fn on_dht_error(self: &mut FfiEventSink, event: MessagePayload);
         fn on_alerts_dropped(self: &mut FfiEventSink, event: MessagePayload);
+        fn on_dht_sample_infohashes(self: &mut FfiEventSink, event: DhtSampleInfohashesPayload);
+        fn on_dht_pkt(self: &mut FfiEventSink, event: DhtPktPayload);
     }
 
     unsafe extern "C++" {
@@ -56,6 +61,9 @@ mod bridge {
         type InfoMessagePayload = crate::ffi::torrent::InfoMessagePayload;
         type AddTorrentErrorPayload = crate::ffi::torrent::AddTorrentErrorPayload;
         type MessagePayload = crate::ffi::session::MessagePayload;
+        type UdpEndpoint = crate::ffi::dht::UdpEndpoint;
+        type DhtSampleInfohashesPayload = crate::ffi::dht::DhtSampleInfohashesPayload;
+        type DhtPktPayload = crate::ffi::dht::DhtPktPayload;
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
@@ -65,6 +73,11 @@ mod bridge {
         fn fetch_metadata(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
         fn cancel_fetch(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
         fn post_dht_stats(engine: &Engine) -> bool;
+        fn post_dht_sample_infohashes(
+            engine: &Engine,
+            endpoint: &UdpEndpoint,
+            target: &[u8; 20],
+        ) -> bool;
     }
 }
 
@@ -109,6 +122,14 @@ impl FfiEventSink {
     message_callback!(on_udp_error, UdpError);
     message_callback!(on_dht_error, DhtError);
     message_callback!(on_alerts_dropped, AlertsDropped);
+
+    fn on_dht_sample_infohashes(&mut self, event: bridge::DhtSampleInfohashesPayload) {
+        self.emit(event.into());
+    }
+
+    fn on_dht_pkt(&mut self, event: bridge::DhtPktPayload) {
+        self.emit(event.into());
+    }
 }
 
 //===----------------------------------------------------------------------===//
@@ -149,4 +170,16 @@ pub(super) fn cancel_fetch(engine: &mut Engine, info_hash: &InfoHash) -> bool {
 /// Requests an asynchronous DHT statistics alert.
 pub(super) fn post_dht_stats(engine: &Engine) -> bool {
     bridge::post_dht_stats(&engine.inner)
+}
+
+pub(super) fn post_dht_sample_infohashes(
+    engine: &Engine,
+    endpoint: &SocketAddr,
+    target: &DhtTarget,
+) -> bool {
+    bridge::post_dht_sample_infohashes(
+        &engine.inner,
+        &UdpEndpoint::from_socket_addr(endpoint),
+        target.as_bytes(),
+    )
 }

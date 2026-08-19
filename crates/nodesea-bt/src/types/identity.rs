@@ -88,3 +88,13 @@ impl_hash_id!(InfoHash);
 pub struct NodeId([u8; 20]);
 
 impl_hash_id!(NodeId);
+
+/// A 20-byte DHT key-space traversal target.
+///
+/// In a BEP 51 sample request, this directs traversal through the DHT key
+/// space. It is distinct from a local or remote [`NodeId`] and does not affect
+/// the samples returned by the queried node.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct DhtTarget([u8; 20]);
+
+impl_hash_id!(DhtTarget);

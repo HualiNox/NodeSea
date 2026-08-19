@@ -1,4 +1,17 @@
+use std::{net::SocketAddr, time::Duration};
+
+use crate::DhtNode;
+
 use super::identity::InfoHash;
+
+/// Direction of a DHT packet (incoming or outgoing).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DhtDirection {
+    /// Incoming packet received from a DHT node.
+    Incoming,
+    /// Outgoing packet sent to a DHT node.
+    Outgoing,
+}
 
 /// A BitTorrent event produced by the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,5 +118,27 @@ pub enum BtEvent {
     AlertsDropped {
         /// Description of the dropped-alert condition.
         message: String,
+    },
+    /// Sample infohashes were received from a DHT node.
+    DhtSampleInfohashes {
+        /// The DHT node that sent the sample.
+        node: DhtNode,
+        /// Minimum interval before requesting another sample from this node.
+        interval: Duration,
+        /// Number of infohashes currently stored by the responding node.
+        num_infohashes: u32,
+        /// The sampled infohashes.
+        samples: Vec<InfoHash>,
+        /// The DHT nodes included in the sample.
+        nodes: Vec<DhtNode>,
+    },
+    /// A raw DHT packet was received or sent for diagnostics.
+    DhtPkt {
+        /// Direction of the packet (incoming or outgoing).
+        direction: DhtDirection,
+        /// Address of the DHT node that sent or received the packet.
+        endpoint: SocketAddr,
+        /// Raw packet data.
+        packet: Vec<u8>,
     },
 }

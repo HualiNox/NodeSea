@@ -11,6 +11,7 @@
 namespace nodesea::bt {
 
 struct FfiEventSink;
+struct UdpEndpoint;
 
 // BitTorrent observation and metadata fetching engine wrapper.
 class Engine {
@@ -38,6 +39,11 @@ public:
 
   // Posts DHT statistics to update the node count.
   bool post_dht_stats() const;
+
+  // Requests BEP 51 infohash samples from a remote DHT endpoint. The target
+  // directs key-space traversal and does not affect the returned samples.
+  bool post_dht_sample_infohashes(const UdpEndpoint& endpoint,
+                                  const std::array<std::uint8_t, 20>& target) const;
 };
 
 // Creates a new BitTorrent engine instance.
@@ -54,5 +60,8 @@ bool fetch_metadata(Engine& engine, const std::array<std::uint8_t, 20>& info_has
 bool cancel_fetch(Engine& engine, const std::array<std::uint8_t, 20>& info_hash);
 
 bool post_dht_stats(const Engine& engine);
+
+bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpoint& endpoint,
+                                const std::array<std::uint8_t, 20>& target);
 
 } // namespace nodesea::bt
