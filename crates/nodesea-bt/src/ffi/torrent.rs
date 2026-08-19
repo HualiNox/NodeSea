@@ -4,26 +4,21 @@ use crate::{BtEvent, InfoHash};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
-    /// Torrent-specific wire representation of an info hash.
-    pub(super) struct TorrentInfoHash {
-        bytes: [u8; 20],
-    }
-
     /// Payload for a metadata-received alert.
     pub(super) struct MetadataReceivedPayload {
-        info_hash: TorrentInfoHash,
+        info_hash: [u8; 20],
         data: Vec<u8>,
     }
 
     /// Payload containing a torrent info hash and message.
     pub(super) struct InfoMessagePayload {
-        info_hash: TorrentInfoHash,
+        info_hash: [u8; 20],
         message: String,
     }
 
     /// Payload for a failed torrent-add operation.
     pub(super) struct AddTorrentErrorPayload {
-        info_hash: TorrentInfoHash,
+        info_hash: [u8; 20],
         message: String,
         error_value: i32,
         error_category: String,
@@ -31,12 +26,6 @@ mod bridge {
 }
 
 pub(super) use bridge::{AddTorrentErrorPayload, InfoMessagePayload, MetadataReceivedPayload};
-
-impl From<bridge::TorrentInfoHash> for InfoHash {
-    fn from(value: bridge::TorrentInfoHash) -> Self {
-        value.bytes.into()
-    }
-}
 
 impl From<bridge::InfoMessagePayload> for (InfoHash, String) {
     fn from(value: bridge::InfoMessagePayload) -> Self {

@@ -1,17 +1,12 @@
 //! Private DHT CXX wire models and their domain conversions.
 
-use crate::{BtEvent, InfoHash};
+use crate::BtEvent;
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
-    /// DHT-specific wire representation of an info hash.
-    pub(super) struct DhtInfoHash {
-        bytes: [u8; 20],
-    }
-
     /// Payload for a DHT announce alert.
     pub(super) struct DhtAnnouncePayload {
-        info_hash: DhtInfoHash,
+        info_hash: [u8; 20],
         peer_ip: String,
         peer_port: u16,
     }
@@ -25,19 +20,13 @@ mod bridge {
 
     /// Payload for a DHT get-peers alert.
     pub(super) struct DhtGetPeersPayload {
-        info_hash: DhtInfoHash,
+        info_hash: [u8; 20],
     }
 }
 
 // These are narrow, named entries for the canonical callback bridge. The
 // bridge module itself remains private and no wildcard re-export is used.
 pub(super) use bridge::{DhtAnnouncePayload, DhtGetPeersPayload, DhtStatsPayload};
-
-impl From<bridge::DhtInfoHash> for InfoHash {
-    fn from(value: bridge::DhtInfoHash) -> Self {
-        value.bytes.into()
-    }
-}
 
 impl From<bridge::DhtAnnouncePayload> for BtEvent {
     fn from(value: bridge::DhtAnnouncePayload) -> Self {

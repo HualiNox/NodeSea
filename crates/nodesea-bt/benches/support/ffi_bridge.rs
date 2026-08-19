@@ -33,19 +33,14 @@ mod bridge {
         fn on_dht_announce(self: &mut FfiBenchSink, event: DhtAnnouncePayload);
     }
 
-    /// A wire-level 20-byte torrent identity used by the benchmark bridge.
-    struct InfoHash {
-        bytes: [u8; 20],
-    }
-
     /// Payload for a benchmarked DHT get-peers event.
     pub(super) struct DhtGetPeersPayload {
-        info_hash: InfoHash,
+        info_hash: [u8; 20],
     }
 
     /// Payload for a benchmarked DHT announce event.
     pub(super) struct DhtAnnouncePayload {
-        info_hash: InfoHash,
+        info_hash: [u8; 20],
         peer_ip: String,
         peer_port: u16,
     }
@@ -64,13 +59,13 @@ mod bridge {
 impl FfiBenchSink {
     fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
         self.emit(BtEvent::DhtGetPeers {
-            info_hash: event.info_hash.bytes.into(),
+            info_hash: event.info_hash.into(),
         });
     }
 
     fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
         self.emit(BtEvent::DhtAnnounce {
-            info_hash: event.info_hash.bytes.into(),
+            info_hash: event.info_hash.into(),
             peer_ip: event.peer_ip,
             peer_port: event.peer_port,
         });
