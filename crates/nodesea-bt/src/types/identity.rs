@@ -7,24 +7,78 @@ macro_rules! impl_hash_id {
     ($name:ident, $len:expr) => {
         impl $name {
             /// Length of the identifier in bytes.
+            ///
+            /// # Returns
+            ///
+            /// - `usize` - The fixed byte length of the identifier.
             pub const LEN: usize = $len;
 
             /// Creates the identifier from its fixed-size byte representation.
+            ///
+            /// # Arguments
+            ///
+            /// - `bytes` (`[u8; $len]`) - The raw identifier bytes.
+            ///
+            /// # Returns
+            ///
+            /// - `Self` - An identifier containing `bytes`.
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// # use nodesea_bt::InfoHashV1;
+            /// let _id = InfoHashV1::from_bytes([0; 20]);
+            /// ```
             pub const fn from_bytes(bytes: [u8; $len]) -> Self {
                 Self(bytes)
             }
 
             /// Returns the identifier's fixed-size byte representation.
+            ///
+            /// # Arguments
+            ///
+            /// - `&self` (`&Self`) - The identifier to inspect.
+            ///
+            /// # Returns
+            ///
+            /// - `&[u8; $len]` - The raw identifier bytes.
             pub const fn as_bytes(&self) -> &[u8; $len] {
                 &self.0
             }
 
             /// Returns the identifier as a hexadecimal string.
+            ///
+            /// # Arguments
+            ///
+            /// - `&self` (`&Self`) - The identifier to format.
+            ///
+            /// # Returns
+            ///
+            /// - `String` - The lowercase hexadecimal representation.
             pub fn to_hex(&self) -> String {
                 hex::encode(self.as_bytes())
             }
 
             /// Parses the identifier from a hexadecimal string.
+            ///
+            /// # Arguments
+            ///
+            /// - `value` (`&str`) - A hexadecimal string with exactly
+            ///   `$len * 2` characters.
+            ///
+            /// # Returns
+            ///
+            /// - `Result<Self, hex::FromHexError>` - The parsed identifier, or
+            ///   an error when the input is invalid.
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// # use nodesea_bt::InfoHashV1;
+            /// let _id = InfoHashV1::from_hex(
+            ///     "0000000000000000000000000000000000000000",
+            /// );
+            /// ```
             pub fn from_hex(value: &str) -> Result<Self, hex::FromHexError> {
                 let mut bytes = [0u8; $len];
                 hex::decode_to_slice(value, &mut bytes)?;
@@ -128,46 +182,128 @@ pub struct TorrentId {
 
 impl TorrentId {
     /// Creates a torrent identity from its available hashes.
+    ///
+    /// # Arguments
+    ///
+    /// - `v1` (`Option<InfoHashV1>`) - An optional v1 infohash.
+    /// - `v2` (`Option<InfoHashV2>`) - An optional v2 infohash.
+    ///
+    /// # Returns
+    ///
+    /// - `Self` - A torrent identity containing the supplied hashes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use nodesea_bt::{InfoHashV1, TorrentId};
+    ///
+    /// let v1 = InfoHashV1::from_bytes([0; 20]);
+    /// let _id = TorrentId::new(Some(v1), None);
+    /// ```
     pub const fn new(v1: Option<InfoHashV1>, v2: Option<InfoHashV2>) -> Self {
         Self { v1, v2 }
     }
 
     /// Returns the v1 hash, if present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `Option<InfoHashV1>` - The v1 hash, if present.
     pub const fn v1(&self) -> Option<InfoHashV1> {
         self.v1
     }
 
     /// Returns the v2 hash, if present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `Option<InfoHashV2>` - The v2 hash, if present.
     pub const fn v2(&self) -> Option<InfoHashV2> {
         self.v2
     }
 
     /// Returns whether a v1 hash is present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether a v1 hash is present.
     pub const fn has_v1(&self) -> bool {
         self.v1.is_some()
     }
 
     /// Returns whether a v2 hash is present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether a v2 hash is present.
     pub const fn has_v2(&self) -> bool {
         self.v2.is_some()
     }
 
     /// Returns whether neither hash is present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether neither a v1 nor v2 hash is present.
     pub const fn is_empty(&self) -> bool {
         self.v1.is_none() && self.v2.is_none()
     }
 
     /// Returns whether this is a v1-only identity.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether only a v1 hash is present.
     pub const fn is_v1(&self) -> bool {
         self.v1.is_some() && self.v2.is_none()
     }
 
     /// Returns whether this is a v2-only identity.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether only a v2 hash is present.
     pub const fn is_v2(&self) -> bool {
         self.v1.is_none() && self.v2.is_some()
     }
 
     /// Returns whether both v1 and v2 hashes are present.
+    ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The torrent identity to inspect.
+    ///
+    /// # Returns
+    ///
+    /// - `bool` - Whether both v1 and v2 hashes are present.
     pub const fn is_hybrid(&self) -> bool {
         self.v1.is_some() && self.v2.is_some()
     }

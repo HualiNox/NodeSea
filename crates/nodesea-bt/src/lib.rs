@@ -21,9 +21,22 @@ pub struct Engine {
 impl Engine {
     /// Creates a new BitTorrent engine instance.
     ///
+    /// # Arguments
+    ///
+    /// This function takes no arguments.
+    ///
     /// # Returns
     ///
-    /// `None` if the underlying C++ engine could not be created.
+    /// - `Option<Self>` - `Some` when the native engine was created, or `None`
+    ///   if creation failed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::Engine;
+    ///
+    /// let _engine = Engine::new();
+    /// ```
     pub fn new() -> Option<Self> {
         ffi::new_engine().map(|inner| Self {
             inner,
@@ -35,12 +48,23 @@ impl Engine {
     ///
     /// # Arguments
     ///
-    /// * `sink` - Receives events as they are dispatched.
+    /// - `&mut self` (`&mut Self`) - The BitTorrent engine to poll.
+    /// - `sink` (`&mut S`) - Receives events as they are dispatched.
     ///
     /// # Returns
     ///
-    /// The number of events delivered, including events buffered by a previous
-    /// call to [`Engine::poll_event`].
+    /// - `usize` - The number of events delivered, including events buffered by
+    ///   a previous call to [`Engine::poll_event`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::{Engine, EventCollector};
+    ///
+    /// let mut engine = Engine::new().unwrap();
+    /// let mut sink = EventCollector::new();
+    /// let _ = engine.poll_events(&mut sink);
+    /// ```
     pub fn poll_events<S: EventSink>(&mut self, sink: &mut S) -> usize {
         let mut dispatched = 0;
         while let Some(event) = self.buffer.pop_front() {
@@ -53,12 +77,25 @@ impl Engine {
 
     /// Polls for the next single event from the BitTorrent engine.
     ///
+    /// # Arguments
+    ///
+    /// - `&mut self` (`&mut Self`) - The BitTorrent engine to poll.
+    ///
     /// # Returns
     ///
-    /// An event if one is available, or `None` if no events are pending.
+    /// - `Option<BtEvent>` - The next event, or `None` if no events are pending.
     ///
     /// This method polls all currently available native alerts once and keeps
     /// the remaining events in an internal queue for subsequent calls.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::Engine;
+    ///
+    /// let mut engine = Engine::new().unwrap();
+    /// let _event = engine.poll_event();
+    /// ```
     pub fn poll_event(&mut self) -> Option<BtEvent> {
         if let Some(event) = self.buffer.pop_front() {
             return Some(event);
@@ -78,11 +115,24 @@ impl Engine {
     ///
     /// # Arguments
     ///
-    /// * `torrent_id` - The torrent identity to use for the metadata request.
+    /// - `&mut self` (`&mut Self`) - The BitTorrent engine to use.
+    /// - `torrent_id` (`&TorrentId`) - The torrent identity to use for the
+    ///   metadata request.
     ///
     /// # Returns
     ///
-    /// `true` if the fetch request was successfully initiated, `false` otherwise.
+    /// - `bool` - `true` if the fetch request was successfully initiated,
+    ///   otherwise `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
+    ///
+    /// let mut engine = Engine::new().unwrap();
+    /// let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0; 20]));
+    /// let _ = engine.fetch_metadata(&torrent_id);
+    /// ```
     pub fn fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
         ffi::fetch_metadata(&mut self.inner, torrent_id)
     }
@@ -91,22 +141,49 @@ impl Engine {
     ///
     /// # Arguments
     ///
-    /// * `torrent_id` - The torrent identity used by the metadata request.
+    /// - `&mut self` (`&mut Self`) - The BitTorrent engine to use.
+    /// - `torrent_id` (`&TorrentId`) - The torrent identity used by the
+    ///   metadata request.
     ///
     /// # Returns
     ///
-    /// `true` if the cancellation request was successfully initiated, `false` otherwise.
+    /// - `bool` - `true` if the cancellation request was successfully initiated,
+    ///   otherwise `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
+    ///
+    /// let mut engine = Engine::new().unwrap();
+    /// let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0; 20]));
+    /// let _ = engine.cancel_fetch_metadata(&torrent_id);
+    /// ```
     pub fn cancel_fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
         ffi::cancel_fetch(&mut self.inner, torrent_id)
     }
 
     /// Requests an asynchronous DHT statistics alert.
     ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The BitTorrent engine to query.
+    ///
     /// # Returns
     ///
-    /// Returns `true` if the request was posted successfully.
+    /// - `bool` - `true` if the request was posted successfully, otherwise
+    ///   `false`.
     ///
     /// The resulting node count is delivered later through [`BtEvent::DhtStats`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::Engine;
+    ///
+    /// let engine = Engine::new().unwrap();
+    /// let _ = engine.post_dht_stats();
+    /// ```
     pub fn post_dht_stats(&self) -> bool {
         ffi::post_dht_stats(&self.inner)
     }
@@ -118,15 +195,28 @@ impl Engine {
     ///
     /// # Arguments
     ///
-    /// * `endpoint` - The remote UDP endpoint to query.
-    /// * `target` - The key-space traversal target. It does not affect the
-    ///   samples returned by the remote node.
+    /// - `&self` (`&Self`) - The BitTorrent engine to use.
+    /// - `endpoint` (`&SocketAddr`) - The remote UDP endpoint to query.
+    /// - `target` (`&DhtTarget`) - The key-space traversal target. It does not
+    ///   affect the samples returned by the remote node.
     ///
     /// # Returns
     ///
-    /// `true` if the request was accepted by the local native session, `false`
-    /// otherwise. It does not guarantee that the remote node supports BEP 51
-    /// or returns a response.
+    /// - `bool` - `true` if the request was accepted by the local native
+    ///   session, otherwise `false`. It does not guarantee that the remote node
+    ///   supports BEP 51 or returns a response.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::net::SocketAddr;
+    /// use nodesea_bt::{DhtTarget, Engine};
+    ///
+    /// let engine = Engine::new().unwrap();
+    /// let endpoint: SocketAddr = "127.0.0.1:6881".parse().unwrap();
+    /// let target = DhtTarget::from_bytes([0; 20]);
+    /// let _ = engine.post_dht_sample_infohashes(&endpoint, &target);
+    /// ```
     pub fn post_dht_sample_infohashes(&self, endpoint: &SocketAddr, target: &DhtTarget) -> bool {
         ffi::post_dht_sample_infohashes(&self.inner, endpoint, target)
     }
@@ -137,12 +227,25 @@ impl Engine {
     /// network request. A separate [`BtEvent::DhtLiveNodes`] is produced for
     /// each local DHT instance whose state is available.
     ///
+    /// # Arguments
+    ///
+    /// - `&self` (`&Self`) - The BitTorrent engine to query.
+    ///
     /// # Returns
     ///
-    /// `true` if the request was accepted by the local native session, `false`
-    /// otherwise. The resulting lists are delivered later as
-    /// [`BtEvent::DhtLiveNodes`]. If the DHT is not started or has no local
-    /// routing-table state, no live-nodes event may be produced.
+    /// - `bool` - `true` if the request was accepted by the local native
+    ///   session, otherwise `false`. The resulting lists are delivered later
+    ///   as [`BtEvent::DhtLiveNodes`]. If the DHT is not started or has no local
+    ///   routing-table state, no live-nodes event may be produced.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nodesea_bt::Engine;
+    ///
+    /// let engine = Engine::new().unwrap();
+    /// let _ = engine.post_dht_live_nodes();
+    /// ```
     pub fn post_dht_live_nodes(&self) -> bool {
         ffi::post_dht_live_nodes(&self.inner)
     }
