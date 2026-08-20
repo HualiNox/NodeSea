@@ -2,9 +2,7 @@
 
 use std::{net::SocketAddr, time::Duration};
 
-use crate::{DhtNode, NodeId};
-
-use super::identity::InfoHash;
+use crate::{DhtInfoHash, DhtNode, NodeId, TorrentId};
 
 /// Direction of a DHT packet (incoming or outgoing).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +19,7 @@ pub enum BtEvent {
     /// A DHT announce event was received.
     DhtAnnounce {
         /// Info hash associated with the announce request.
-        info_hash: InfoHash,
+        info_hash: DhtInfoHash,
         /// Address of the announcing peer.
         peer_ip: String,
         /// Port of the announcing peer.
@@ -29,15 +27,15 @@ pub enum BtEvent {
     },
     /// Metadata was successfully received.
     MetadataReceived {
-        /// Info hash of the torrent whose metadata was received.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the torrent whose metadata was received.
+        torrent_id: TorrentId,
         /// Bencoded torrent info section.
         data: Vec<u8>,
     },
     /// Metadata failed to be received.
     MetadataFailed {
-        /// Info hash of the torrent whose metadata request failed.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the torrent whose metadata request failed.
+        torrent_id: TorrentId,
         /// Failure description reported by libtorrent.
         message: String,
     },
@@ -55,19 +53,19 @@ pub enum BtEvent {
     /// A DHT get peers event was received.
     DhtGetPeers {
         /// Info hash associated with the get peers request.
-        info_hash: InfoHash,
+        info_hash: DhtInfoHash,
     },
     /// A torrent was added successfully.
     AddTorrent {
-        /// Info hash of the added torrent.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the added torrent.
+        torrent_id: TorrentId,
         /// Status message reported by libtorrent.
         message: String,
     },
     /// Adding a torrent failed.
     AddTorrentError {
-        /// Info hash supplied to the add operation.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity supplied to the add operation.
+        torrent_id: TorrentId,
         /// Failure description reported by libtorrent.
         message: String,
         /// Numeric value of the libtorrent error code.
@@ -77,22 +75,22 @@ pub enum BtEvent {
     },
     /// A torrent entered an error state.
     TorrentError {
-        /// Info hash of the torrent in error.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the torrent in error.
+        torrent_id: TorrentId,
         /// Error description reported by libtorrent.
         message: String,
     },
     /// A file operation failed for a torrent.
     FileError {
-        /// Info hash of the affected torrent.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the affected torrent.
+        torrent_id: TorrentId,
         /// Error description reported by libtorrent.
         message: String,
     },
     /// Deleting a torrent failed.
     TorrentDeleteFailed {
-        /// Info hash of the torrent that could not be deleted.
-        info_hash: InfoHash,
+        /// Combined v1/v2 identity of the torrent that could not be deleted.
+        torrent_id: TorrentId,
         /// Failure description reported by libtorrent.
         message: String,
     },
@@ -130,7 +128,7 @@ pub enum BtEvent {
         /// Number of infohashes currently stored by the responding node.
         num_infohashes: u32,
         /// The sampled infohashes.
-        samples: Vec<InfoHash>,
+        samples: Vec<DhtInfoHash>,
         /// The DHT nodes included in the sample.
         nodes: Vec<DhtNode>,
     },

@@ -2,7 +2,7 @@
 
 use std::{net::SocketAddr, time::Duration};
 
-use crate::{BtEvent, DhtNode, InfoHash};
+use crate::{BtEvent, DhtInfoHash, DhtNode};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -60,9 +60,10 @@ mod bridge {
     /// Private fixed-size wire adapter for a sampled infohash.
     ///
     /// CXX cannot represent `Vec<[u8; 20]>` as a shared field. This wrapper
-    /// exists only for the FFI payload and is converted to [`InfoHash`] before
+    /// exists only for the FFI payload and is converted to [`DhtInfoHash`] before
     /// reaching the domain event.
     pub(super) struct SampleInfoHashPayload {
+        /// Raw 20-byte sampled infohash.
         bytes: [u8; 20],
     }
 
@@ -154,7 +155,7 @@ impl From<bridge::UdpEndpointPayload> for SocketAddr {
     }
 }
 
-impl From<bridge::SampleInfoHashPayload> for InfoHash {
+impl From<bridge::SampleInfoHashPayload> for DhtInfoHash {
     fn from(value: bridge::SampleInfoHashPayload) -> Self {
         Self::from_bytes(value.bytes)
     }

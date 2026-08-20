@@ -20,6 +20,7 @@
 #include <libtorrent/alert.hpp>
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/info_hash.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/settings_pack.hpp>
 #include <libtorrent/sha1_hash.hpp>
@@ -127,7 +128,6 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::metadata_received_alert::alert_type: {
       auto* a = static_cast<lt::metadata_received_alert*>(alert);
 
-      auto hash = digest_to_array(a->handle.info_hash());
       auto torrent_file = a->handle.torrent_file();
       rust::Vec<std::uint8_t> data;
       if (torrent_file && torrent_file->is_valid()) {
@@ -138,14 +138,14 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
         }
       }
       sink.on_metadata_received(MetadataReceivedPayload{
-          .info_hash = hash,
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
           .data = std::move(data),
       });
 
       ++dispatched;
 
       // Clean up the fetch entry.
-      std::string key(reinterpret_cast<const char*>(hash.data()), 20);
+      std::string key = torrent_id_key(a->handle.info_hashes());
       impl_->session_->remove_torrent(a->handle);
       impl_->archive_fetches_.erase(key);
       break;
@@ -156,7 +156,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::metadata_failed_alert*>(alert);
 
       sink.on_metadata_failed(MetadataFailedPayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
           .message = rust::String(a->message()),
       });
 
@@ -278,15 +278,14 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::add_torrent_alert::alert_type: {
       auto* a = static_cast<lt::add_torrent_alert*>(alert);
 
-      auto hash = digest_to_array(a->params.info_hashes.get_best());
       if (a->error == lt::errors::no_error) {
         sink.on_add_torrent(AddTorrentPayload{
-            .info_hash = hash,
+            .torrent_id = convert_to_torrent_id(a->params.info_hashes),
             .message = rust::String(a->message()),
         });
       } else {
         sink.on_add_torrent_error(AddTorrentErrorPayload{
-            .info_hash = hash,
+            .torrent_id = convert_to_torrent_id(a->params.info_hashes),
             .message = rust::String(a->message()),
             .error_value = static_cast<std::int32_t>(a->error.value()),
             .error_category = rust::String(a->error.category().name()),
@@ -303,7 +302,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::torrent_error_alert*>(alert);
 
       sink.on_torrent_error(TorrentErrorPayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
           .message = rust::String(a->message()),
       });
 
@@ -317,7 +316,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::file_error_alert*>(alert);
 
       sink.on_file_error(FileErrorPayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
           .message = rust::String(a->message()),
       });
 
@@ -331,7 +330,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
       auto* a = static_cast<lt::torrent_delete_failed_alert*>(alert);
 
       sink.on_torrent_delete_failed(TorrentDeleteFailedPayload{
-          .info_hash = digest_to_array(a->handle.info_hash()),
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
           .message = rust::String(a->message()),
       });
 
@@ -449,20 +448,22 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
   return dispatched;
 }
 
-bool Engine::fetch_metadata(const std::array<std::uint8_t, 20>& info_hash) {
+bool Engine::fetch_metadata(const TorrentIdPayload& torrent_id) {
   if (!impl_->session_) {
     return false;
   }
 
-  lt::sha1_hash sha1_hash(reinterpret_cast<const char*>(info_hash.data()));
-  std::string sha1_hash_key = sha1_hash.to_string();
+  if (!torrent_id.has_v1 && !torrent_id.has_v2) {
+    return false;
+  }
 
-  if (impl_->archive_fetches_.contains(sha1_hash_key)) {
+  std::string torrent_key = torrent_id_key(torrent_id);
+  if (impl_->archive_fetches_.contains(torrent_key)) {
     return false;
   }
 
   lt::add_torrent_params params;
-  params.info_hashes = lt::info_hash_t(sha1_hash);
+  params.info_hashes = convert_to_info_hash(torrent_id);
   params.save_path = ".";
   params.flags |= lt::torrent_flags::upload_mode | lt::torrent_flags::default_dont_download |
                   lt::torrent_flags::auto_managed;
@@ -472,18 +473,17 @@ bool Engine::fetch_metadata(const std::array<std::uint8_t, 20>& info_hash) {
   if (error) {
     return false;
   }
-  impl_->archive_fetches_[sha1_hash_key] = handle;
+  impl_->archive_fetches_[torrent_key] = handle;
   return true;
 }
 
-bool Engine::cancel_fetch(const std::array<std::uint8_t, 20>& info_hash) {
+bool Engine::cancel_fetch(const TorrentIdPayload& torrent_id) {
   if (!impl_->session_) {
     return false;
   }
 
-  std::string sha1_hash_key =
-      lt::sha1_hash(reinterpret_cast<const char*>(info_hash.data())).to_string();
-  auto handle_it = impl_->archive_fetches_.find(sha1_hash_key);
+  std::string torrent_key = torrent_id_key(torrent_id);
+  auto handle_it = impl_->archive_fetches_.find(torrent_key);
   if (handle_it == impl_->archive_fetches_.end()) {
     return false;
   }
@@ -546,12 +546,12 @@ std::size_t poll_events(Engine& engine, FfiEventSink& sink) {
   return engine.poll_events(sink);
 }
 
-bool fetch_metadata(Engine& engine, const std::array<std::uint8_t, 20>& info_hash) {
-  return engine.fetch_metadata(info_hash);
+bool fetch_metadata(Engine& engine, const TorrentIdPayload& torrent_id) {
+  return engine.fetch_metadata(torrent_id);
 }
 
-bool cancel_fetch(Engine& engine, const std::array<std::uint8_t, 20>& info_hash) {
-  return engine.cancel_fetch(info_hash);
+bool cancel_fetch(Engine& engine, const TorrentIdPayload& torrent_id) {
+  return engine.cancel_fetch(torrent_id);
 }
 
 bool post_dht_stats(const Engine& engine) {

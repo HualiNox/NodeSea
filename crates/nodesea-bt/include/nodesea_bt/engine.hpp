@@ -12,6 +12,7 @@ namespace nodesea::bt {
 
 struct FfiEventSink;
 struct UdpEndpointPayload;
+struct TorrentIdPayload;
 
 // BitTorrent observation and metadata fetching engine wrapper.
 class Engine {
@@ -31,11 +32,11 @@ public:
   // dispatched; alerts with no registered event mapping are not counted.
   std::size_t poll_events(FfiEventSink& sink);
 
-  // Initiates metadata-only download for a torrent by its 20-byte info hash.
-  bool fetch_metadata(const std::array<std::uint8_t, 20>& info_hash);
+  // Initiates metadata-only download for a torrent v1, v2, or hybrid identity.
+  bool fetch_metadata(const TorrentIdPayload& torrent_id);
 
   // Cancels an ongoing metadata fetch task.
-  bool cancel_fetch(const std::array<std::uint8_t, 20>& info_hash);
+  bool cancel_fetch(const TorrentIdPayload& torrent_id);
 
   // Posts DHT statistics to update the node count.
   bool post_dht_stats() const;
@@ -59,9 +60,9 @@ std::unique_ptr<Engine> new_engine();
 
 std::size_t poll_events(Engine& engine, FfiEventSink& sink);
 
-bool fetch_metadata(Engine& engine, const std::array<std::uint8_t, 20>& info_hash);
+bool fetch_metadata(Engine& engine, const TorrentIdPayload& torrent_id);
 
-bool cancel_fetch(Engine& engine, const std::array<std::uint8_t, 20>& info_hash);
+bool cancel_fetch(Engine& engine, const TorrentIdPayload& torrent_id);
 
 bool post_dht_stats(const Engine& engine);
 

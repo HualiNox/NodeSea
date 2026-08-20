@@ -6,7 +6,8 @@ mod ffi;
 mod types;
 
 pub use types::{
-    BtEvent, DhtDirection, DhtNode, DhtTarget, EventCollector, EventSink, InfoHash, NodeId,
+    BtEvent, DhtDirection, DhtInfoHash, DhtNode, DhtTarget, EventCollector, EventSink, InfoHashV1,
+    InfoHashV2, NodeId, TorrentId,
 };
 
 /// A BitTorrent engine backed by a libtorrent session.
@@ -73,30 +74,30 @@ impl Engine {
         self.buffer.pop_front()
     }
 
-    /// Fetches metadata for a torrent using its info hash.
+    /// Fetches metadata for a torrent using its v1, v2, or hybrid identity.
     ///
     /// # Arguments
     ///
-    /// * `info_hash` - The 20-byte info hash identifying the torrent.
+    /// * `torrent_id` - The torrent identity to use for the metadata request.
     ///
     /// # Returns
     ///
     /// `true` if the fetch request was successfully initiated, `false` otherwise.
-    pub fn fetch_metadata(&mut self, info_hash: &InfoHash) -> bool {
-        ffi::fetch_metadata(&mut self.inner, info_hash)
+    pub fn fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
+        ffi::fetch_metadata(&mut self.inner, torrent_id)
     }
 
-    /// Cancels a metadata fetch request for a torrent using its info hash.
+    /// Cancels a metadata fetch request for a torrent identity.
     ///
     /// # Arguments
     ///
-    /// * `info_hash` - The 20-byte info hash identifying the torrent.
+    /// * `torrent_id` - The torrent identity used by the metadata request.
     ///
     /// # Returns
     ///
     /// `true` if the cancellation request was successfully initiated, `false` otherwise.
-    pub fn cancel_fetch_metadata(&mut self, info_hash: &InfoHash) -> bool {
-        ffi::cancel_fetch(&mut self.inner, info_hash)
+    pub fn cancel_fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
+        ffi::cancel_fetch(&mut self.inner, torrent_id)
     }
 
     /// Requests an asynchronous DHT statistics alert.
@@ -172,38 +173,56 @@ mod tests {
     #[test]
     fn test_info_hash_hex_roundtrip() {
         let hex_str = "0123456789abcdef0123456789abcdef01234567";
-        let hash = InfoHash::from_hex(hex_str).expect("Valid 40-character hex string");
+        let hash = InfoHashV1::from_hex(hex_str).expect("Valid 40-character hex string");
         assert_eq!(hash.to_hex(), hex_str);
         assert_eq!(format!("{hash}"), hex_str);
-        assert_eq!(format!("{hash:?}"), format!("InfoHash({hex_str})"));
+        assert_eq!(format!("{hash:?}"), format!("InfoHashV1({hex_str})"));
     }
 
     #[test]
     fn test_info_hash_traits() {
         let hex_str = "0123456789abcdef0123456789abcdef01234567";
-        let hash: InfoHash = hex_str.parse().expect("Parse via FromStr");
+        let hash: InfoHashV1 = hex_str.parse().expect("Parse via FromStr");
         assert_eq!(hash.to_hex(), hex_str);
 
-        let hash_try_str = InfoHash::try_from(hex_str).expect("TryFrom &str");
+        let hash_try_str = InfoHashV1::try_from(hex_str).expect("TryFrom &str");
         assert_eq!(hash_try_str, hash);
 
         let raw = [7u8; 20];
-        let hash_try_slice = InfoHash::try_from(&raw[..]).expect("TryFrom &[u8]");
+        let hash_try_slice = InfoHashV1::try_from(&raw[..]).expect("TryFrom &[u8]");
         assert_eq!(hash_try_slice.as_bytes(), &raw);
     }
 
     #[test]
     fn test_info_hash_invalid_hex() {
-        assert!(InfoHash::from_hex("invalid_hex_characters_here!!").is_err());
-        assert!(InfoHash::from_hex("12345678").is_err()); // Too short
+        assert!(InfoHashV1::from_hex("invalid_hex_characters_here!!").is_err());
+        assert!(InfoHashV1::from_hex("12345678").is_err()); // Too short
     }
 
     #[test]
     fn test_info_hash_from_bytes() {
         let raw_bytes = [42u8; 20];
-        let hash = InfoHash::from_bytes(raw_bytes);
+        let hash = InfoHashV1::from_bytes(raw_bytes);
         assert_eq!(hash.as_bytes(), &raw_bytes);
-        assert_eq!(hash, InfoHash::from(raw_bytes));
+        assert_eq!(hash, InfoHashV1::from(raw_bytes));
+    }
+
+    #[test]
+    fn test_torrent_id_v2_and_hybrid_identity() {
+        let v1 = InfoHashV1::from_bytes([0x11; 20]);
+        let v2 = InfoHashV2::from_bytes([0x22; 32]);
+
+        let v2_id = TorrentId::from(v2);
+        assert!(v2_id.is_v2());
+        assert!(!v2_id.has_v1());
+        assert_eq!(v2_id.v2(), Some(v2));
+
+        let hybrid_id = TorrentId::new(Some(v1), Some(v2));
+        assert!(hybrid_id.is_hybrid());
+        assert!(hybrid_id.has_v1());
+        assert!(hybrid_id.has_v2());
+        assert_eq!(hybrid_id.v1(), Some(v1));
+        assert_eq!(hybrid_id.v2(), Some(v2));
     }
 
     #[test]
@@ -217,7 +236,7 @@ mod tests {
         assert!(engine.post_dht_stats());
 
         // Test metadata fetch lifecycle
-        let dummy_hash = InfoHash::from_bytes([0xef; 20]);
+        let dummy_hash = TorrentId::from(InfoHashV1::from_bytes([0xef; 20]));
         assert!(engine.fetch_metadata(&dummy_hash));
 
         // Duplicate fetch should return false (already registered)
@@ -228,22 +247,36 @@ mod tests {
 
         // Canceling a non-existent fetch should return false
         assert!(!engine.cancel_fetch_metadata(&dummy_hash));
+
+        // v2-only and hybrid identities use the same native fetch lifecycle.
+        let v2_id = TorrentId::from(InfoHashV2::from_bytes([0xcd; 32]));
+        assert!(engine.fetch_metadata(&v2_id));
+        assert!(!engine.fetch_metadata(&v2_id));
+        assert!(engine.cancel_fetch_metadata(&v2_id));
+
+        let hybrid_id = TorrentId::new(
+            Some(InfoHashV1::from_bytes([0xab; 20])),
+            Some(InfoHashV2::from_bytes([0xcd; 32])),
+        );
+        assert!(engine.fetch_metadata(&hybrid_id));
+        assert!(!engine.fetch_metadata(&hybrid_id));
+        assert!(engine.cancel_fetch_metadata(&hybrid_id));
     }
 
     #[test]
     fn test_info_hash_default_and_order() {
-        let default_hash = InfoHash::default();
+        let default_hash = InfoHashV1::default();
         assert_eq!(default_hash.as_bytes(), &[0u8; 20]);
-        assert_eq!(default_hash, InfoHash::from_bytes([0u8; 20]));
+        assert_eq!(default_hash, InfoHashV1::from_bytes([0u8; 20]));
 
-        let hash_a = InfoHash::from_bytes([1u8; 20]);
-        let hash_b = InfoHash::from_bytes([2u8; 20]);
+        let hash_a = InfoHashV1::from_bytes([1u8; 20]);
+        let hash_b = InfoHashV1::from_bytes([2u8; 20]);
         assert!(hash_a < hash_b);
         assert_eq!(hash_a.as_ref(), &[1u8; 20]);
 
         // Test TryFrom slice error on invalid length
         let invalid_slice = [0u8; 19];
-        assert!(InfoHash::try_from(&invalid_slice[..]).is_err());
+        assert!(InfoHashV1::try_from(&invalid_slice[..]).is_err());
     }
 
     #[test]
@@ -251,7 +284,7 @@ mod tests {
         let mut collector = EventCollector::new();
         assert!(collector.events().is_empty());
 
-        let info_hash = InfoHash::from_bytes([0xab; 20]);
+        let info_hash = DhtInfoHash::from_bytes([0xab; 20]);
         let get_peers_event = BtEvent::DhtGetPeers { info_hash };
         let announce_event = BtEvent::DhtAnnounce {
             info_hash,
@@ -285,20 +318,21 @@ mod tests {
 
     #[test]
     fn test_bt_event_variants() {
-        let info_hash = InfoHash::from_bytes([0x42; 20]);
+        let dht_info_hash = DhtInfoHash::from_bytes([0x42; 20]);
+        let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0x42; 20]));
 
         let events = vec![
             BtEvent::DhtAnnounce {
-                info_hash,
+                info_hash: dht_info_hash,
                 peer_ip: "10.0.0.1".to_string(),
                 peer_port: 8080,
             },
             BtEvent::MetadataReceived {
-                info_hash,
+                torrent_id,
                 data: vec![1, 2, 3],
             },
             BtEvent::MetadataFailed {
-                info_hash,
+                torrent_id,
                 message: "fetch failed".to_string(),
             },
             BtEvent::DhtStats {
@@ -307,27 +341,29 @@ mod tests {
                 local_port: 6881,
             },
             BtEvent::DhtBootstrap,
-            BtEvent::DhtGetPeers { info_hash },
+            BtEvent::DhtGetPeers {
+                info_hash: dht_info_hash,
+            },
             BtEvent::AddTorrent {
-                info_hash,
+                torrent_id,
                 message: "torrent added".to_string(),
             },
             BtEvent::AddTorrentError {
-                info_hash,
+                torrent_id,
                 message: "add failed".to_string(),
                 error_value: 1,
                 error_category: "libtorrent".to_string(),
             },
             BtEvent::TorrentError {
-                info_hash,
+                torrent_id,
                 message: "torrent error".to_string(),
             },
             BtEvent::FileError {
-                info_hash,
+                torrent_id,
                 message: "file error".to_string(),
             },
             BtEvent::TorrentDeleteFailed {
-                info_hash,
+                torrent_id,
                 message: "delete failed".to_string(),
             },
             BtEvent::SessionError {

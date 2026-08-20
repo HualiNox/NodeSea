@@ -1,14 +1,9 @@
 //! Simple observer example that polls and prints BitTorrent engine events.
-use nodesea_bt::{BtEvent, DhtTarget, Engine, EventSink, InfoHash};
+use nodesea_bt::{BtEvent, DhtTarget, Engine, EventSink};
 use std::{collections::HashSet, net::SocketAddr};
 
-/// Example event sink that observes DHT activity and schedules metadata
-/// requests for discovered infohashes.
+/// Example event sink that observes DHT activity and live-node snapshots.
 struct Observer {
-    /// Infohashes waiting for metadata fetches.
-    pending: Vec<InfoHash>,
-    /// Infohashes already seen through DHT announce/get-peers events.
-    seen: HashSet<InfoHash>,
     /// DHT endpoints discovered from live-node snapshots.
     nodes: HashSet<SocketAddr>,
     /// Endpoints sampled once by this example.
@@ -23,24 +18,10 @@ impl EventSink for Observer {
         match event {
             BtEvent::DhtAnnounce { info_hash, .. } => {
                 println!("dht announce: {info_hash}");
-                if self.seen.insert(info_hash) {
-                    self.pending.push(info_hash);
-                }
             }
 
             BtEvent::DhtGetPeers { info_hash } => {
                 println!("dht getpeers: {info_hash}");
-                if self.seen.insert(info_hash) {
-                    self.pending.push(info_hash);
-                }
-            }
-
-            BtEvent::MetadataReceived { info_hash, data } => {
-                println!("metadata: {info_hash}, {} bytes", data.len());
-            }
-
-            BtEvent::MetadataFailed { info_hash, message } => {
-                println!("metadata failed: {info_hash}: {message}");
             }
 
             BtEvent::DhtStats {
@@ -107,8 +88,6 @@ fn main() {
     // Create the BitTorrent engine and start polling for DHT events
     let mut engine = Engine::new().expect("failed to initialize engine");
     let mut observer = Observer {
-        pending: Vec::new(),
-        seen: HashSet::new(),
         dht_bootstrapped: false,
         sampled: HashSet::new(),
         nodes: HashSet::new(),
@@ -135,12 +114,6 @@ fn main() {
         }
 
         engine.poll_events(&mut observer);
-
-        for hash in observer.pending.drain(..) {
-            if engine.fetch_metadata(&hash) {
-                println!("fetching {hash}");
-            }
-        }
 
         // Wait before next poll
         std::thread::sleep(std::time::Duration::from_secs(2));

@@ -13,7 +13,7 @@ mod torrent;
 
 use std::net::SocketAddr;
 
-use crate::{BtEvent, DhtTarget, EventSink, InfoHash, ffi::dht::UdpEndpointPayload};
+use crate::{BtEvent, DhtTarget, EventSink, TorrentId};
 use sink::FfiEventSink;
 
 //===----------------------------------------------------------------------===//
@@ -65,6 +65,7 @@ mod bridge {
         type TorrentErrorPayload = crate::ffi::torrent::TorrentErrorPayload;
         type FileErrorPayload = crate::ffi::torrent::FileErrorPayload;
         type TorrentDeleteFailedPayload = crate::ffi::torrent::TorrentDeleteFailedPayload;
+        type TorrentIdPayload = crate::ffi::torrent::TorrentIdPayload;
         type SessionErrorPayload = crate::ffi::session::SessionErrorPayload;
         type ListenFailedPayload = crate::ffi::session::ListenFailedPayload;
         type UdpErrorPayload = crate::ffi::session::UdpErrorPayload;
@@ -80,8 +81,8 @@ mod bridge {
 
         fn new_engine() -> UniquePtr<Engine>;
         fn poll_events(engine: Pin<&mut Engine>, sink: &mut FfiEventSink) -> usize;
-        fn fetch_metadata(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
-        fn cancel_fetch(engine: Pin<&mut Engine>, info_hash: &[u8; 20]) -> bool;
+        fn fetch_metadata(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
+        fn cancel_fetch(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
         fn post_dht_stats(engine: &Engine) -> bool;
         fn post_dht_sample_infohashes(
             engine: &Engine,
@@ -129,6 +130,7 @@ impl FfiEventSink {
 
 /// Rust-owned wrapper around the private generated CXX Engine binding.
 pub(super) struct Engine {
+    /// Opaque native engine allocation owned by this Rust wrapper.
     inner: cxx::UniquePtr<bridge::Engine>,
 }
 
@@ -148,14 +150,14 @@ pub(super) fn poll_events<S: EventSink>(engine: &mut Engine, sink: &mut S) -> us
     bridge::poll_events(engine.inner.pin_mut(), &mut ffi_sink)
 }
 
-/// Starts metadata fetching for an info hash.
-pub(super) fn fetch_metadata(engine: &mut Engine, info_hash: &InfoHash) -> bool {
-    bridge::fetch_metadata(engine.inner.pin_mut(), info_hash.as_bytes())
+/// Starts metadata fetching for a torrent identity.
+pub(super) fn fetch_metadata(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
+    bridge::fetch_metadata(engine.inner.pin_mut(), &torrent_id.into())
 }
 
-/// Cancels metadata fetching for an info hash.
-pub(super) fn cancel_fetch(engine: &mut Engine, info_hash: &InfoHash) -> bool {
-    bridge::cancel_fetch(engine.inner.pin_mut(), info_hash.as_bytes())
+/// Cancels metadata fetching for a torrent identity.
+pub(super) fn cancel_fetch(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
+    bridge::cancel_fetch(engine.inner.pin_mut(), &torrent_id.into())
 }
 
 /// Requests an asynchronous DHT statistics alert.
@@ -171,7 +173,7 @@ pub(super) fn post_dht_sample_infohashes(
 ) -> bool {
     bridge::post_dht_sample_infohashes(
         &engine.inner,
-        &UdpEndpointPayload::from_socket_addr(endpoint),
+        &bridge::UdpEndpointPayload::from_socket_addr(endpoint),
         target.as_bytes(),
     )
 }

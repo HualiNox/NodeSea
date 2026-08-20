@@ -1,8 +1,10 @@
-use nodesea_bt::{BtEvent, EventSink};
+use nodesea_bt::{BtEvent, DhtInfoHash, EventSink};
 
 /// Rust-owned adapter used only by the benchmark bridge.
 pub(super) struct FfiBenchSink {
+    /// Erased pointer to the benchmark event sink.
     data: *mut (),
+    /// Type-specialized callback used to restore the sink type.
     emit_fn: unsafe fn(*mut (), BtEvent),
 }
 
@@ -35,13 +37,17 @@ mod bridge {
 
     /// Payload for a benchmarked DHT get-peers event.
     pub(super) struct DhtGetPeersPayload {
+        /// 20-byte DHT infohash associated with the lookup.
         info_hash: [u8; 20],
     }
 
     /// Payload for a benchmarked DHT announce event.
     pub(super) struct DhtAnnouncePayload {
+        /// 20-byte DHT infohash associated with the announce.
         info_hash: [u8; 20],
+        /// Announced peer IP address.
         peer_ip: String,
+        /// Announced peer port.
         peer_port: u16,
     }
 
@@ -59,13 +65,13 @@ mod bridge {
 impl FfiBenchSink {
     fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
         self.emit(BtEvent::DhtGetPeers {
-            info_hash: event.info_hash.into(),
+            info_hash: DhtInfoHash::from(event.info_hash),
         });
     }
 
     fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
         self.emit(BtEvent::DhtAnnounce {
-            info_hash: event.info_hash.into(),
+            info_hash: DhtInfoHash::from(event.info_hash),
             peer_ip: event.peer_ip,
             peer_port: event.peer_port,
         });
