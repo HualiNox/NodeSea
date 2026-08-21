@@ -155,3 +155,46 @@ impl EventCollector {
         self.events.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DhtInfoHash;
+
+    #[test]
+    fn test_event_collector_sink() {
+        let mut collector = EventCollector::new();
+        assert!(collector.events().is_empty());
+
+        let info_hash = DhtInfoHash::from_bytes([0xab; 20]);
+        let get_peers_event = BtEvent::DhtGetPeers { info_hash };
+        let announce_event = BtEvent::DhtAnnounce {
+            info_hash,
+            peer_ip: "127.0.0.1".to_string(),
+            peer_port: 6881,
+        };
+
+        collector.on_event(BtEvent::DhtBootstrap);
+        collector.on_event(get_peers_event.clone());
+        collector.on_event(announce_event.clone());
+
+        assert_eq!(collector.events().len(), 3);
+        assert_eq!(
+            collector.events(),
+            &[
+                BtEvent::DhtBootstrap,
+                get_peers_event.clone(),
+                announce_event.clone()
+            ]
+        );
+
+        let taken = collector.take_events();
+        assert_eq!(taken.len(), 3);
+        assert!(collector.events().is_empty());
+
+        collector.on_event(get_peers_event);
+        assert_eq!(collector.events().len(), 1);
+        collector.clear();
+        assert!(collector.events().is_empty());
+    }
+}

@@ -149,3 +149,83 @@ pub enum BtEvent {
         nodes: Vec<DhtNode>,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::InfoHashV1;
+
+    #[test]
+    fn test_bt_event_variants() {
+        let dht_info_hash = DhtInfoHash::from_bytes([0x42; 20]);
+        let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0x42; 20]));
+
+        let events = vec![
+            BtEvent::DhtAnnounce {
+                info_hash: dht_info_hash,
+                peer_ip: "10.0.0.1".to_string(),
+                peer_port: 8080,
+            },
+            BtEvent::MetadataReceived {
+                torrent_id,
+                data: vec![1, 2, 3],
+            },
+            BtEvent::MetadataFailed {
+                torrent_id,
+                message: "fetch failed".to_string(),
+            },
+            BtEvent::DhtStats {
+                node_count: 128,
+                local_ip: "127.0.0.1".to_string(),
+                local_port: 6881,
+            },
+            BtEvent::DhtBootstrap,
+            BtEvent::DhtGetPeers {
+                info_hash: dht_info_hash,
+            },
+            BtEvent::AddTorrent {
+                torrent_id,
+                message: "torrent added".to_string(),
+            },
+            BtEvent::AddTorrentError {
+                torrent_id,
+                message: "add failed".to_string(),
+                error_value: 1,
+                error_category: "libtorrent".to_string(),
+            },
+            BtEvent::TorrentError {
+                torrent_id,
+                message: "torrent error".to_string(),
+            },
+            BtEvent::FileError {
+                torrent_id,
+                message: "file error".to_string(),
+            },
+            BtEvent::TorrentDeleteFailed {
+                torrent_id,
+                message: "delete failed".to_string(),
+            },
+            BtEvent::SessionError {
+                message: "session error".to_string(),
+            },
+            BtEvent::ListenFailed {
+                message: "listen error".to_string(),
+            },
+            BtEvent::UdpError {
+                message: "udp error".to_string(),
+            },
+            BtEvent::DhtError {
+                message: "dht error".to_string(),
+            },
+            BtEvent::AlertsDropped {
+                message: "dropped alerts".to_string(),
+            },
+        ];
+
+        for event in events {
+            let cloned = event.clone();
+            assert_eq!(event, cloned);
+            assert!(!format!("{event:?}").is_empty());
+        }
+    }
+}

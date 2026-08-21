@@ -355,3 +355,78 @@ impl Display for TorrentId {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_info_hash_hex_roundtrip() {
+        let hex_str = "0123456789abcdef0123456789abcdef01234567";
+        let hash = InfoHashV1::from_hex(hex_str).expect("Valid 40-character hex string");
+        assert_eq!(hash.to_hex(), hex_str);
+        assert_eq!(format!("{hash}"), hex_str);
+        assert_eq!(format!("{hash:?}"), format!("InfoHashV1({hex_str})"));
+    }
+
+    #[test]
+    fn test_info_hash_traits() {
+        let hex_str = "0123456789abcdef0123456789abcdef01234567";
+        let hash: InfoHashV1 = hex_str.parse().expect("Parse via FromStr");
+        assert_eq!(hash.to_hex(), hex_str);
+
+        let hash_try_str = InfoHashV1::try_from(hex_str).expect("TryFrom &str");
+        assert_eq!(hash_try_str, hash);
+
+        let raw = [7u8; 20];
+        let hash_try_slice = InfoHashV1::try_from(&raw[..]).expect("TryFrom &[u8]");
+        assert_eq!(hash_try_slice.as_bytes(), &raw);
+    }
+
+    #[test]
+    fn test_info_hash_invalid_hex() {
+        assert!(InfoHashV1::from_hex("invalid_hex_characters_here!!").is_err());
+        assert!(InfoHashV1::from_hex("12345678").is_err());
+    }
+
+    #[test]
+    fn test_info_hash_from_bytes() {
+        let raw_bytes = [42u8; 20];
+        let hash = InfoHashV1::from_bytes(raw_bytes);
+        assert_eq!(hash.as_bytes(), &raw_bytes);
+        assert_eq!(hash, InfoHashV1::from(raw_bytes));
+    }
+
+    #[test]
+    fn test_torrent_id_v2_and_hybrid_identity() {
+        let v1 = InfoHashV1::from_bytes([0x11; 20]);
+        let v2 = InfoHashV2::from_bytes([0x22; 32]);
+
+        let v2_id = TorrentId::from(v2);
+        assert!(v2_id.is_v2());
+        assert!(!v2_id.has_v1());
+        assert_eq!(v2_id.v2(), Some(v2));
+
+        let hybrid_id = TorrentId::new(Some(v1), Some(v2));
+        assert!(hybrid_id.is_hybrid());
+        assert!(hybrid_id.has_v1());
+        assert!(hybrid_id.has_v2());
+        assert_eq!(hybrid_id.v1(), Some(v1));
+        assert_eq!(hybrid_id.v2(), Some(v2));
+    }
+
+    #[test]
+    fn test_info_hash_default_and_order() {
+        let default_hash = InfoHashV1::default();
+        assert_eq!(default_hash.as_bytes(), &[0u8; 20]);
+        assert_eq!(default_hash, InfoHashV1::from_bytes([0u8; 20]));
+
+        let hash_a = InfoHashV1::from_bytes([1u8; 20]);
+        let hash_b = InfoHashV1::from_bytes([2u8; 20]);
+        assert!(hash_a < hash_b);
+        assert_eq!(hash_a.as_ref(), &[1u8; 20]);
+
+        let invalid_slice = [0u8; 19];
+        assert!(InfoHashV1::try_from(&invalid_slice[..]).is_err());
+    }
+}
