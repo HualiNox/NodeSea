@@ -23,20 +23,14 @@ mod bridge {
         message: String,
     }
 
-    /// Payload for a successful torrent-add operation.
+    /// Payload for a torrent-add operation.
     pub(super) struct AddTorrentPayload {
         /// Combined torrent identity supplied to the add operation.
         torrent_id: TorrentIdPayload,
         /// Status message reported by libtorrent.
         message: String,
-    }
-
-    /// Payload for a failed torrent-add operation.
-    pub(super) struct AddTorrentErrorPayload {
-        /// Combined torrent identity supplied to the add operation.
-        torrent_id: TorrentIdPayload,
-        /// Human-readable failure description.
-        message: String,
+        /// Whether the add operation failed.
+        has_error: bool,
         /// Numeric libtorrent error value.
         error_value: i32,
         /// Name of the libtorrent error category.
@@ -81,8 +75,8 @@ mod bridge {
 }
 
 pub(super) use bridge::{
-    AddTorrentErrorPayload, AddTorrentPayload, FileErrorPayload, MetadataFailedPayload,
-    MetadataReceivedPayload, TorrentDeleteFailedPayload, TorrentErrorPayload, TorrentIdPayload,
+    AddTorrentPayload, FileErrorPayload, MetadataFailedPayload, MetadataReceivedPayload,
+    TorrentDeleteFailedPayload, TorrentErrorPayload, TorrentIdPayload,
 };
 
 impl bridge::TorrentIdPayload {
@@ -121,22 +115,14 @@ impl From<bridge::MetadataReceivedPayload> for BtEvent {
     }
 }
 
-impl From<bridge::AddTorrentErrorPayload> for BtEvent {
-    fn from(value: bridge::AddTorrentErrorPayload) -> Self {
-        Self::new(BtEventKind::AddTorrentError(AddTorrentError::from_ffi(
-            value.torrent_id.into_torrent_id(),
-            value.message,
-            value.error_value,
-            value.error_category,
-        )))
-    }
-}
-
 impl From<bridge::AddTorrentPayload> for BtEvent {
     fn from(value: bridge::AddTorrentPayload) -> Self {
         Self::new(BtEventKind::AddTorrent(AddTorrent::from_ffi(
             value.torrent_id.into_torrent_id(),
             value.message,
+            value
+                .has_error
+                .then(|| AddTorrentError::from_ffi(value.error_value, value.error_category)),
         )))
     }
 }

@@ -113,19 +113,19 @@ event_payload!(
     }
 );
 event_payload!(
-    "Torrent added event payload.",
-    AddTorrent {
-        torrent_id: TorrentId,
-        message: String,
+    "Error details reported when adding a torrent fails.",
+    AddTorrentError {
+        error_value: i32,
+        error_category: String,
     }
 );
 event_payload!(
-    "Torrent add failure event payload.",
-    AddTorrentError {
+    "Torrent add result. The `error` field contains failure details when the
+    operation fails.",
+    AddTorrent {
         torrent_id: TorrentId,
         message: String,
-        error_value: i32,
-        error_category: String,
+        error: Option<AddTorrentError>,
     }
 );
 event_payload!(
@@ -194,10 +194,8 @@ pub enum BtEventKind {
     DhtBootstrap(DhtBootstrap),
     /// A DHT get-peers event was received.
     DhtGetPeers(DhtGetPeers),
-    /// A torrent was added successfully.
+    /// A torrent-add operation completed.
     AddTorrent(AddTorrent),
-    /// Adding a torrent failed.
-    AddTorrentError(AddTorrentError),
     /// A torrent entered an error state.
     TorrentError(TorrentError),
     /// A file operation failed for a torrent.
@@ -249,12 +247,12 @@ mod tests {
             BtEventKind::AddTorrent(AddTorrent::from_ffi(
                 torrent_id,
                 "torrent added".to_string(),
+                None,
             )),
-            BtEventKind::AddTorrentError(AddTorrentError::from_ffi(
+            BtEventKind::AddTorrent(AddTorrent::from_ffi(
                 torrent_id,
                 "add failed".to_string(),
-                1,
-                "libtorrent".to_string(),
+                Some(AddTorrentError::from_ffi(1, "libtorrent".to_string())),
             )),
             BtEventKind::TorrentError(TorrentError::from_ffi(
                 torrent_id,

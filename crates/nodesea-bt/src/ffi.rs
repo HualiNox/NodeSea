@@ -35,7 +35,6 @@ mod bridge {
         fn on_dht_bootstrap(self: &mut FfiEventSink);
         fn on_dht_get_peers(self: &mut FfiEventSink, event: DhtGetPeersPayload);
         fn on_add_torrent(self: &mut FfiEventSink, event: AddTorrentPayload);
-        fn on_add_torrent_error(self: &mut FfiEventSink, event: AddTorrentErrorPayload);
         fn on_torrent_error(self: &mut FfiEventSink, event: TorrentErrorPayload);
         fn on_file_error(self: &mut FfiEventSink, event: FileErrorPayload);
         fn on_torrent_delete_failed(self: &mut FfiEventSink, event: TorrentDeleteFailedPayload);
@@ -61,7 +60,6 @@ mod bridge {
         type MetadataReceivedPayload = crate::ffi::torrent::MetadataReceivedPayload;
         type MetadataFailedPayload = crate::ffi::torrent::MetadataFailedPayload;
         type AddTorrentPayload = crate::ffi::torrent::AddTorrentPayload;
-        type AddTorrentErrorPayload = crate::ffi::torrent::AddTorrentErrorPayload;
         type TorrentErrorPayload = crate::ffi::torrent::TorrentErrorPayload;
         type FileErrorPayload = crate::ffi::torrent::FileErrorPayload;
         type TorrentDeleteFailedPayload = crate::ffi::torrent::TorrentDeleteFailedPayload;
@@ -105,7 +103,6 @@ impl FfiEventSink {
     event_callback!(on_dht_stats, bridge::DhtStatsPayload);
     event_callback!(on_dht_get_peers, bridge::DhtGetPeersPayload);
     event_callback!(on_add_torrent, bridge::AddTorrentPayload);
-    event_callback!(on_add_torrent_error, bridge::AddTorrentErrorPayload);
     event_callback!(on_torrent_error, bridge::TorrentErrorPayload);
     event_callback!(on_file_error, bridge::FileErrorPayload);
     event_callback!(on_torrent_delete_failed, bridge::TorrentDeleteFailedPayload);

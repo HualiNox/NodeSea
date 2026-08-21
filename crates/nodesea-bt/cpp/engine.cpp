@@ -278,19 +278,13 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
     case lt::add_torrent_alert::alert_type: {
       auto* a = static_cast<lt::add_torrent_alert*>(alert);
 
-      if (a->error == lt::errors::no_error) {
-        sink.on_add_torrent(AddTorrentPayload{
-            .torrent_id = convert_to_torrent_id(a->params.info_hashes),
-            .message = rust::String(a->message()),
-        });
-      } else {
-        sink.on_add_torrent_error(AddTorrentErrorPayload{
-            .torrent_id = convert_to_torrent_id(a->params.info_hashes),
-            .message = rust::String(a->message()),
-            .error_value = static_cast<std::int32_t>(a->error.value()),
-            .error_category = rust::String(a->error.category().name()),
-        });
-      }
+      sink.on_add_torrent(AddTorrentPayload{
+          .torrent_id = convert_to_torrent_id(a->params.info_hashes),
+          .message = rust::String(a->message()),
+          .has_error = a->error != lt::errors::no_error,
+          .error_value = static_cast<std::int32_t>(a->error.value()),
+          .error_category = rust::String(a->error.category().name()),
+      });
 
       ++dispatched;
 
