@@ -110,12 +110,6 @@ macro_rules! impl_hash_id {
             }
         }
 
-        impl From<[u8; $len]> for $name {
-            fn from(value: [u8; $len]) -> Self {
-                Self::from_bytes(value)
-            }
-        }
-
         impl AsRef<[u8; $len]> for $name {
             fn as_ref(&self) -> &[u8; $len] {
                 self.as_bytes()
@@ -309,42 +303,6 @@ impl TorrentId {
     }
 }
 
-impl From<InfoHashV1> for TorrentId {
-    fn from(info_hash: InfoHashV1) -> Self {
-        Self::new(Some(info_hash), None)
-    }
-}
-
-impl From<InfoHashV2> for TorrentId {
-    fn from(info_hash: InfoHashV2) -> Self {
-        Self::new(None, Some(info_hash))
-    }
-}
-
-impl From<[u8; 20]> for TorrentId {
-    fn from(bytes: [u8; 20]) -> Self {
-        Self::new(Some(InfoHashV1::from_bytes(bytes)), None)
-    }
-}
-
-impl From<&[u8; 20]> for TorrentId {
-    fn from(bytes: &[u8; 20]) -> Self {
-        Self::new(Some(InfoHashV1::from_bytes(*bytes)), None)
-    }
-}
-
-impl From<[u8; 32]> for TorrentId {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self::new(None, Some(InfoHashV2::from_bytes(bytes)))
-    }
-}
-
-impl From<&[u8; 32]> for TorrentId {
-    fn from(bytes: &[u8; 32]) -> Self {
-        Self::new(None, Some(InfoHashV2::from_bytes(*bytes)))
-    }
-}
-
 impl Display for TorrentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (self.v1, self.v2) {
@@ -394,7 +352,6 @@ mod tests {
         let raw_bytes = [42u8; 20];
         let hash = InfoHashV1::from_bytes(raw_bytes);
         assert_eq!(hash.as_bytes(), &raw_bytes);
-        assert_eq!(hash, InfoHashV1::from(raw_bytes));
     }
 
     #[test]
@@ -402,7 +359,7 @@ mod tests {
         let v1 = InfoHashV1::from_bytes([0x11; 20]);
         let v2 = InfoHashV2::from_bytes([0x22; 32]);
 
-        let v2_id = TorrentId::from(v2);
+        let v2_id = TorrentId::new(None, Some(v2));
         assert!(v2_id.is_v2());
         assert!(!v2_id.has_v1());
         assert_eq!(v2_id.v2(), Some(v2));
