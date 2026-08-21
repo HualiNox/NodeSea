@@ -42,7 +42,7 @@ impl Engine {
     ///
     /// This constructor is kept inside the engine module. Callers should use
     /// [`Engine::builder`] to construct an engine.
-    pub(crate) fn new(settings_pack: SettingsPack) -> Option<Self> {
+    pub(crate) fn new(settings_pack: SettingsPack) -> Result<Self, String> {
         ffi::new_engine(settings_pack).map(|inner| Self {
             inner,
             buffer: VecDeque::new(),

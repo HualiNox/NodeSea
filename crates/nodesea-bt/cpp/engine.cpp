@@ -28,6 +28,7 @@
 #include <libtorrent/torrent_handle.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -61,7 +62,8 @@ Engine::Engine(SettingsPackPayload const& settings_pack) : impl_(std::make_uniqu
       sp.set_str(setting.key, std::string(setting.string_value));
       break;
     default:
-      // Unknown setting type; ignore.
+      throw std::runtime_error("Unknown setting kind: " +
+                               std::to_string(static_cast<int>(setting.kind)));
       break;
     }
   }

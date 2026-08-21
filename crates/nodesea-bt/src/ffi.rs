@@ -110,7 +110,7 @@ mod bridge {
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
 
-        fn new_engine(settings_pack: &SettingsPackPayload) -> UniquePtr<Engine>;
+        fn new_engine(settings_pack: &SettingsPackPayload) -> Result<UniquePtr<Engine>>;
         fn poll_events(engine: Pin<&mut Engine>, sink: &mut FfiEventSink) -> usize;
         fn fetch_metadata(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
         fn cancel_fetch(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
@@ -185,10 +185,11 @@ pub(super) struct Engine {
 //===----------------------------------------------------------------------===//
 
 /// Creates a Rust-owned wrapper around the native engine.
-pub(super) fn new_engine(settings_pack: SettingsPack) -> Option<Engine> {
+pub(super) fn new_engine(settings_pack: SettingsPack) -> Result<Engine, String> {
     let settings_pack = bridge::SettingsPackPayload::from(settings_pack);
-    let inner = bridge::new_engine(&settings_pack);
-    (!inner.is_null()).then_some(Engine { inner })
+    bridge::new_engine(&settings_pack)
+        .map(|inner| Engine { inner })
+        .map_err(|error| error.what().to_owned())
 }
 
 /// Polls native alerts and dispatches them to the supplied domain sink.

@@ -22,7 +22,7 @@ impl EngineBuilder {
     }
 
     /// Creates the engine with the configured settings.
-    pub fn build(self) -> Option<super::Engine> {
+    pub fn build(self) -> Result<super::Engine, String> {
         super::Engine::new(self.settings)
     }
 }
