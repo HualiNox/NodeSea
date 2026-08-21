@@ -7,8 +7,22 @@ use super::identity::NodeId;
 /// A DHT node identity and its network endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DhtNode {
-    /// The node's DHT identity.
-    pub node_id: NodeId,
-    /// The node's reachable network endpoint.
-    pub endpoint: SocketAddr,
+    node_id: NodeId,
+    endpoint: SocketAddr,
+}
+
+impl DhtNode {
+    pub(crate) fn from_ffi(node_id: NodeId, endpoint: SocketAddr) -> Self {
+        Self { node_id, endpoint }
+    }
+
+    /// Returns the node's DHT identity.
+    pub fn node_id(&self) -> &NodeId {
+        &self.node_id
+    }
+
+    /// Returns the node's reachable network endpoint.
+    pub fn endpoint(&self) -> &SocketAddr {
+        &self.endpoint
+    }
 }

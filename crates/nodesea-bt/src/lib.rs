@@ -7,6 +7,9 @@ mod types;
 
 pub use engine::Engine;
 pub use types::{
-    BtEvent, DhtDirection, DhtInfoHash, DhtNode, DhtTarget, EventCollector, EventSink, InfoHashV1,
-    InfoHashV2, NodeId, TorrentId,
+    AddTorrent, AddTorrentError, AlertsDropped, BtEvent, BtEventKind, DhtAnnounce, DhtBootstrap,
+    DhtDirection, DhtError, DhtGetPeers, DhtInfoHash, DhtLiveNodes, DhtNode, DhtPkt,
+    DhtSampleInfohashes, DhtStats, DhtTarget, EventCollector, EventSink, FileError, InfoHashV1,
+    InfoHashV2, ListenFailed, MetadataFailed, MetadataReceived, NodeId, SessionError,
+    TorrentDeleteFailed, TorrentError, TorrentId, UdpError,
 };

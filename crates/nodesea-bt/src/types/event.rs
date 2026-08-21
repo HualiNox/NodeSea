@@ -1,6 +1,9 @@
 //! Public domain events emitted by the BitTorrent engine.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::SocketAddr,
+    time::{Duration, SystemTime},
+};
 
 use crate::{DhtInfoHash, DhtNode, NodeId, TorrentId};
 
@@ -13,141 +16,210 @@ pub enum DhtDirection {
     Outgoing,
 }
 
-/// A BitTorrent event produced by the engine.
+/// A BitTorrent event with its reception timestamp and event payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BtEvent {
-    /// A DHT announce event was received.
+pub struct BtEvent {
+    timestamp: SystemTime,
+    kind: BtEventKind,
+}
+
+impl BtEvent {
+    /// Returns the time at which the event was created by the Rust bridge.
+    pub fn timestamp(&self) -> SystemTime {
+        self.timestamp
+    }
+
+    /// Returns the event payload without consuming the event.
+    pub fn kind(&self) -> &BtEventKind {
+        &self.kind
+    }
+
+    pub(crate) fn new(kind: BtEventKind) -> Self {
+        Self {
+            timestamp: SystemTime::now(),
+            kind,
+        }
+    }
+}
+
+macro_rules! event_payload {
+    ($doc:literal, $name:ident { $($field:ident: $ty:ty),* $(,)? }) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub struct $name {
+            $(
+                $field: $ty,
+            )*
+        }
+
+        impl $name {
+            pub(crate) fn from_ffi($($field: $ty),*) -> Self {
+                Self { $($field),* }
+            }
+
+            $(
+                #[doc = concat!("Returns the `", stringify!($field), "` field.")]
+                pub fn $field(&self) -> &$ty {
+                    &self.$field
+                }
+            )*
+        }
+    };
+    ($doc:literal, $name:ident) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub struct $name;
+
+        impl $name {
+            pub(crate) fn from_ffi() -> Self {
+                Self
+            }
+        }
+    };
+}
+
+event_payload!(
+    "A DHT announce event payload.",
     DhtAnnounce {
-        /// Info hash associated with the announce request.
         info_hash: DhtInfoHash,
-        /// Address of the announcing peer.
         peer_ip: String,
-        /// Port of the announcing peer.
         peer_port: u16,
-    },
-    /// Metadata was successfully received.
-    MetadataReceived {
-        /// Combined v1/v2 identity of the torrent whose metadata was received.
-        torrent_id: TorrentId,
-        /// Bencoded torrent info section.
-        data: Vec<u8>,
-    },
-    /// Metadata failed to be received.
+    }
+);
+event_payload!("Metadata received event payload.", MetadataReceived {
+    torrent_id: TorrentId,
+    data: Vec<u8>,
+});
+event_payload!(
+    "Metadata failed event payload.",
     MetadataFailed {
-        /// Combined v1/v2 identity of the torrent whose metadata request failed.
         torrent_id: TorrentId,
-        /// Failure description reported by libtorrent.
         message: String,
-    },
-    /// The DHT stats event containing the number of nodes.
+    }
+);
+event_payload!(
+    "DHT statistics event payload.",
     DhtStats {
-        /// Number of nodes currently present in the DHT routing table.
         node_count: u32,
-        /// Local IP address used for DHT operations.
         local_ip: String,
-        /// Local port used for DHT operations.
         local_port: u16,
-    },
-    /// The DHT bootstrap process has completed.
-    DhtBootstrap,
-    /// A DHT get peers event was received.
+    }
+);
+event_payload!("DHT bootstrap event payload.", DhtBootstrap);
+event_payload!(
+    "DHT get-peers event payload.",
     DhtGetPeers {
-        /// Info hash associated with the get peers request.
         info_hash: DhtInfoHash,
-    },
-    /// A torrent was added successfully.
+    }
+);
+event_payload!(
+    "Torrent added event payload.",
     AddTorrent {
-        /// Combined v1/v2 identity of the added torrent.
         torrent_id: TorrentId,
-        /// Status message reported by libtorrent.
         message: String,
-    },
-    /// Adding a torrent failed.
+    }
+);
+event_payload!(
+    "Torrent add failure event payload.",
     AddTorrentError {
-        /// Combined v1/v2 identity supplied to the add operation.
         torrent_id: TorrentId,
-        /// Failure description reported by libtorrent.
         message: String,
-        /// Numeric value of the libtorrent error code.
         error_value: i32,
-        /// Error category name returned by libtorrent.
         error_category: String,
-    },
-    /// A torrent entered an error state.
+    }
+);
+event_payload!(
+    "Torrent error event payload.",
     TorrentError {
-        /// Combined v1/v2 identity of the torrent in error.
         torrent_id: TorrentId,
-        /// Error description reported by libtorrent.
         message: String,
-    },
-    /// A file operation failed for a torrent.
+    }
+);
+event_payload!(
+    "File error event payload.",
     FileError {
-        /// Combined v1/v2 identity of the affected torrent.
         torrent_id: TorrentId,
-        /// Error description reported by libtorrent.
         message: String,
-    },
-    /// Deleting a torrent failed.
+    }
+);
+event_payload!(
+    "Torrent deletion failure event payload.",
     TorrentDeleteFailed {
-        /// Combined v1/v2 identity of the torrent that could not be deleted.
         torrent_id: TorrentId,
-        /// Failure description reported by libtorrent.
         message: String,
-    },
+    }
+);
+event_payload!(
+    "Session error event payload.",
+    SessionError { message: String }
+);
+event_payload!(
+    "Listen failure event payload.",
+    ListenFailed { message: String }
+);
+event_payload!("UDP error event payload.", UdpError { message: String });
+event_payload!("DHT error event payload.", DhtError { message: String });
+event_payload!(
+    "Dropped alerts event payload.",
+    AlertsDropped { message: String }
+);
+event_payload!("DHT sample infohashes event payload.", DhtSampleInfohashes {
+    node: DhtNode,
+    interval: Duration,
+    num_infohashes: u32,
+    samples: Vec<DhtInfoHash>,
+    nodes: Vec<DhtNode>,
+});
+event_payload!("Raw DHT packet event payload.", DhtPkt {
+    direction: DhtDirection,
+    endpoint: SocketAddr,
+    packet: Vec<u8>,
+});
+event_payload!("DHT live nodes event payload.", DhtLiveNodes {
+    local_node_id: NodeId,
+    nodes: Vec<DhtNode>,
+});
+/// A BitTorrent event payload produced by the engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BtEventKind {
+    /// A DHT announce event.
+    DhtAnnounce(DhtAnnounce),
+    /// Metadata was successfully received.
+    MetadataReceived(MetadataReceived),
+    /// Metadata failed to be received.
+    MetadataFailed(MetadataFailed),
+    /// DHT statistics were received.
+    DhtStats(DhtStats),
+    /// DHT bootstrap completed.
+    DhtBootstrap(DhtBootstrap),
+    /// A DHT get-peers event was received.
+    DhtGetPeers(DhtGetPeers),
+    /// A torrent was added successfully.
+    AddTorrent(AddTorrent),
+    /// Adding a torrent failed.
+    AddTorrentError(AddTorrentError),
+    /// A torrent entered an error state.
+    TorrentError(TorrentError),
+    /// A file operation failed for a torrent.
+    FileError(FileError),
+    /// Deleting a torrent failed.
+    TorrentDeleteFailed(TorrentDeleteFailed),
     /// The session reported an error.
-    SessionError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
+    SessionError(SessionError),
     /// Listening on the configured port failed.
-    ListenFailed {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
+    ListenFailed(ListenFailed),
     /// A UDP operation failed.
-    UdpError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
+    UdpError(UdpError),
     /// A DHT operation failed.
-    DhtError {
-        /// Error description reported by libtorrent.
-        message: String,
-    },
+    DhtError(DhtError),
     /// The session dropped alerts before they were polled.
-    AlertsDropped {
-        /// Description of the dropped-alert condition.
-        message: String,
-    },
+    AlertsDropped(AlertsDropped),
     /// Sample infohashes were received from a DHT node.
-    DhtSampleInfohashes {
-        /// The DHT node that sent the sample.
-        node: DhtNode,
-        /// Minimum interval before requesting another sample from this node.
-        interval: Duration,
-        /// Number of infohashes currently stored by the responding node.
-        num_infohashes: u32,
-        /// The sampled infohashes.
-        samples: Vec<DhtInfoHash>,
-        /// The DHT nodes included in the sample.
-        nodes: Vec<DhtNode>,
-    },
-    /// A raw DHT packet was received or sent for diagnostics.
-    DhtPkt {
-        /// Direction of the packet (incoming or outgoing).
-        direction: DhtDirection,
-        /// Address of the DHT node that sent or received the packet.
-        endpoint: SocketAddr,
-        /// Raw packet data.
-        packet: Vec<u8>,
-    },
+    DhtSampleInfohashes(DhtSampleInfohashes),
+    /// A raw DHT packet was received or sent.
+    DhtPkt(DhtPkt),
     /// Live nodes were reported for one local DHT routing table.
-    DhtLiveNodes {
-        /// Node ID identifying the local DHT routing table.
-        local_node_id: NodeId,
-        /// Nodes currently present in that routing table.
-        nodes: Vec<DhtNode>,
-    },
+    DhtLiveNodes(DhtLiveNodes),
 }
 
 #[cfg(test)]
@@ -158,71 +230,50 @@ mod tests {
     #[test]
     fn test_bt_event_variants() {
         let dht_info_hash = DhtInfoHash::from_bytes([0x42; 20]);
-        let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0x42; 20]));
+        let torrent_id = TorrentId::new(Some(InfoHashV1::from_bytes([0x42; 20])), None);
 
-        let events = vec![
-            BtEvent::DhtAnnounce {
-                info_hash: dht_info_hash,
-                peer_ip: "10.0.0.1".to_string(),
-                peer_port: 8080,
-            },
-            BtEvent::MetadataReceived {
+        let kinds = vec![
+            BtEventKind::DhtAnnounce(DhtAnnounce::from_ffi(
+                dht_info_hash,
+                "10.0.0.1".to_string(),
+                8080,
+            )),
+            BtEventKind::MetadataReceived(MetadataReceived::from_ffi(torrent_id, vec![1, 2, 3])),
+            BtEventKind::MetadataFailed(MetadataFailed::from_ffi(
                 torrent_id,
-                data: vec![1, 2, 3],
-            },
-            BtEvent::MetadataFailed {
+                "fetch failed".to_string(),
+            )),
+            BtEventKind::DhtStats(DhtStats::from_ffi(128, "127.0.0.1".to_string(), 6881)),
+            BtEventKind::DhtBootstrap(DhtBootstrap::from_ffi()),
+            BtEventKind::DhtGetPeers(DhtGetPeers::from_ffi(dht_info_hash)),
+            BtEventKind::AddTorrent(AddTorrent::from_ffi(
                 torrent_id,
-                message: "fetch failed".to_string(),
-            },
-            BtEvent::DhtStats {
-                node_count: 128,
-                local_ip: "127.0.0.1".to_string(),
-                local_port: 6881,
-            },
-            BtEvent::DhtBootstrap,
-            BtEvent::DhtGetPeers {
-                info_hash: dht_info_hash,
-            },
-            BtEvent::AddTorrent {
+                "torrent added".to_string(),
+            )),
+            BtEventKind::AddTorrentError(AddTorrentError::from_ffi(
                 torrent_id,
-                message: "torrent added".to_string(),
-            },
-            BtEvent::AddTorrentError {
+                "add failed".to_string(),
+                1,
+                "libtorrent".to_string(),
+            )),
+            BtEventKind::TorrentError(TorrentError::from_ffi(
                 torrent_id,
-                message: "add failed".to_string(),
-                error_value: 1,
-                error_category: "libtorrent".to_string(),
-            },
-            BtEvent::TorrentError {
+                "torrent error".to_string(),
+            )),
+            BtEventKind::FileError(FileError::from_ffi(torrent_id, "file error".to_string())),
+            BtEventKind::TorrentDeleteFailed(TorrentDeleteFailed::from_ffi(
                 torrent_id,
-                message: "torrent error".to_string(),
-            },
-            BtEvent::FileError {
-                torrent_id,
-                message: "file error".to_string(),
-            },
-            BtEvent::TorrentDeleteFailed {
-                torrent_id,
-                message: "delete failed".to_string(),
-            },
-            BtEvent::SessionError {
-                message: "session error".to_string(),
-            },
-            BtEvent::ListenFailed {
-                message: "listen error".to_string(),
-            },
-            BtEvent::UdpError {
-                message: "udp error".to_string(),
-            },
-            BtEvent::DhtError {
-                message: "dht error".to_string(),
-            },
-            BtEvent::AlertsDropped {
-                message: "dropped alerts".to_string(),
-            },
+                "delete failed".to_string(),
+            )),
+            BtEventKind::SessionError(SessionError::from_ffi("session error".to_string())),
+            BtEventKind::ListenFailed(ListenFailed::from_ffi("listen error".to_string())),
+            BtEventKind::UdpError(UdpError::from_ffi("udp error".to_string())),
+            BtEventKind::DhtError(DhtError::from_ffi("dht error".to_string())),
+            BtEventKind::AlertsDropped(AlertsDropped::from_ffi("dropped alerts".to_string())),
         ];
 
-        for event in events {
+        for kind in kinds {
+            let event = BtEvent::new(kind);
             let cloned = event.clone();
             assert_eq!(event, cloned);
             assert!(!format!("{event:?}").is_empty());

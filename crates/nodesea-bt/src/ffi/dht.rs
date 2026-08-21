@@ -2,7 +2,10 @@
 
 use std::{net::SocketAddr, time::Duration};
 
-use crate::{BtEvent, DhtInfoHash, DhtNode};
+use crate::{
+    BtEvent, BtEventKind, DhtAnnounce, DhtGetPeers, DhtInfoHash, DhtLiveNodes, DhtNode, DhtPkt,
+    DhtSampleInfohashes, DhtStats, NodeId,
+};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -114,29 +117,29 @@ pub(super) use bridge::{
 
 impl From<bridge::DhtAnnouncePayload> for BtEvent {
     fn from(value: bridge::DhtAnnouncePayload) -> Self {
-        Self::DhtAnnounce {
-            info_hash: value.info_hash.into(),
-            peer_ip: value.peer_ip,
-            peer_port: value.peer_port,
-        }
+        Self::new(BtEventKind::DhtAnnounce(DhtAnnounce::from_ffi(
+            DhtInfoHash::from_bytes(value.info_hash),
+            value.peer_ip,
+            value.peer_port,
+        )))
     }
 }
 
 impl From<bridge::DhtStatsPayload> for BtEvent {
     fn from(value: bridge::DhtStatsPayload) -> Self {
-        Self::DhtStats {
-            node_count: value.node_count,
-            local_ip: value.local_ip,
-            local_port: value.local_port,
-        }
+        Self::new(BtEventKind::DhtStats(DhtStats::from_ffi(
+            value.node_count,
+            value.local_ip,
+            value.local_port,
+        )))
     }
 }
 
 impl From<bridge::DhtGetPeersPayload> for BtEvent {
     fn from(value: bridge::DhtGetPeersPayload) -> Self {
-        Self::DhtGetPeers {
-            info_hash: value.info_hash.into(),
-        }
+        Self::new(BtEventKind::DhtGetPeers(DhtGetPeers::from_ffi(
+            DhtInfoHash::from_bytes(value.info_hash),
+        )))
     }
 }
 
@@ -149,59 +152,73 @@ impl bridge::UdpEndpointPayload {
     }
 }
 
-impl From<bridge::UdpEndpointPayload> for SocketAddr {
-    fn from(value: bridge::UdpEndpointPayload) -> Self {
-        SocketAddr::new(value.address.parse().unwrap(), value.port)
+impl bridge::UdpEndpointPayload {
+    fn into_socket_addr(self) -> SocketAddr {
+        SocketAddr::new(self.address.parse().unwrap(), self.port)
     }
 }
 
-impl From<bridge::SampleInfoHashPayload> for DhtInfoHash {
-    fn from(value: bridge::SampleInfoHashPayload) -> Self {
-        Self::from_bytes(value.bytes)
+impl bridge::SampleInfoHashPayload {
+    fn into_dht_info_hash(self) -> DhtInfoHash {
+        DhtInfoHash::from_bytes(self.bytes)
     }
 }
 
-impl From<bridge::DhtNodePayload> for DhtNode {
-    fn from(value: bridge::DhtNodePayload) -> Self {
-        Self {
-            node_id: value.node_id.into(),
-            endpoint: value.endpoint.into(),
-        }
+impl bridge::DhtNodePayload {
+    fn into_dht_node(self) -> DhtNode {
+        DhtNode::from_ffi(
+            NodeId::from_bytes(self.node_id),
+            self.endpoint.into_socket_addr(),
+        )
     }
 }
 
 impl From<bridge::DhtSampleInfohashesPayload> for BtEvent {
     fn from(value: bridge::DhtSampleInfohashesPayload) -> Self {
-        Self::DhtSampleInfohashes {
-            node: value.node.into(),
-            interval: Duration::from_secs(value.interval_secs as u64),
-            num_infohashes: value.num_infohashes as u32,
-            samples: value.samples.into_iter().map(|s| s.into()).collect(),
-            nodes: value.nodes.into_iter().map(|n| n.into()).collect(),
-        }
+        Self::new(BtEventKind::DhtSampleInfohashes(
+            DhtSampleInfohashes::from_ffi(
+                value.node.into_dht_node(),
+                Duration::from_secs(value.interval_secs as u64),
+                value.num_infohashes as u32,
+                value
+                    .samples
+                    .into_iter()
+                    .map(bridge::SampleInfoHashPayload::into_dht_info_hash)
+                    .collect(),
+                value
+                    .nodes
+                    .into_iter()
+                    .map(bridge::DhtNodePayload::into_dht_node)
+                    .collect(),
+            ),
+        ))
     }
 }
 
 impl From<bridge::DhtPktPayload> for BtEvent {
     fn from(value: bridge::DhtPktPayload) -> Self {
-        Self::DhtPkt {
-            direction: match value.direction {
+        Self::new(BtEventKind::DhtPkt(DhtPkt::from_ffi(
+            match value.direction {
                 bridge::DhtDirectionPayload::Incoming => crate::DhtDirection::Incoming,
                 bridge::DhtDirectionPayload::Outgoing => crate::DhtDirection::Outgoing,
                 // unreachable
                 _ => unreachable!("invalid DHT direction from C++"),
             },
-            endpoint: value.endpoint.into(),
-            packet: value.packet,
-        }
+            value.endpoint.into_socket_addr(),
+            value.packet,
+        )))
     }
 }
 
 impl From<bridge::DhtLiveNodesPayload> for BtEvent {
     fn from(value: bridge::DhtLiveNodesPayload) -> Self {
-        Self::DhtLiveNodes {
-            local_node_id: value.local_node_id.into(),
-            nodes: value.nodes.into_iter().map(|n| n.into()).collect(),
-        }
+        Self::new(BtEventKind::DhtLiveNodes(DhtLiveNodes::from_ffi(
+            NodeId::from_bytes(value.local_node_id),
+            value
+                .nodes
+                .into_iter()
+                .map(bridge::DhtNodePayload::into_dht_node)
+                .collect(),
+        )))
     }
 }

@@ -115,7 +115,7 @@ impl Engine {
     /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
     ///
     /// let mut engine = Engine::new().unwrap();
-    /// let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0; 20]));
+    /// let torrent_id = TorrentId::new(Some(InfoHashV1::from_bytes([0; 20])), None);
     /// let _ = engine.fetch_metadata(&torrent_id);
     /// ```
     pub fn fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
@@ -139,7 +139,7 @@ impl Engine {
     /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
     ///
     /// let mut engine = Engine::new().unwrap();
-    /// let torrent_id = TorrentId::from(InfoHashV1::from_bytes([0; 20]));
+    /// let torrent_id = TorrentId::new(Some(InfoHashV1::from_bytes([0; 20])), None);
     /// let _ = engine.cancel_fetch_metadata(&torrent_id);
     /// ```
     pub fn cancel_fetch_metadata(&mut self, torrent_id: &TorrentId) -> bool {
@@ -149,7 +149,7 @@ impl Engine {
     /// Requests an asynchronous DHT statistics alert.
     ///
     /// The resulting node count is delivered later through
-    /// [`BtEvent::DhtStats`].
+    /// [`crate::BtEventKind::DhtStats`].
     ///
     /// # Returns
     ///
@@ -170,7 +170,7 @@ impl Engine {
     /// Requests BEP 51 infohash samples from a remote DHT node.
     ///
     /// This request does not fetch torrent metadata. A successful response is
-    /// delivered later as [`BtEvent::DhtSampleInfohashes`].
+    /// delivered later as [`crate::BtEventKind::DhtSampleInfohashes`].
     ///
     /// # Arguments
     ///
@@ -201,7 +201,7 @@ impl Engine {
     ///
     /// This operation only reads the local routing tables; it does not send a
     /// network request. The resulting lists are delivered later as
-    /// [`BtEvent::DhtLiveNodes`].
+    /// [`crate::BtEventKind::DhtLiveNodes`].
     ///
     /// # Returns
     ///
@@ -228,7 +228,7 @@ unsafe impl Send for Engine {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EventCollector, InfoHashV1, InfoHashV2};
+    use crate::{BtEventKind, EventCollector, InfoHashV1, InfoHashV2};
 
     #[test]
     fn test_engine_lifecycle() {
@@ -237,13 +237,13 @@ mod tests {
         assert_eq!(engine.poll_event(), None);
         assert!(engine.post_dht_stats());
 
-        let dummy_hash = TorrentId::from(InfoHashV1::from_bytes([0xef; 20]));
+        let dummy_hash = TorrentId::new(Some(InfoHashV1::from_bytes([0xef; 20])), None);
         assert!(engine.fetch_metadata(&dummy_hash));
         assert!(!engine.fetch_metadata(&dummy_hash));
         assert!(engine.cancel_fetch_metadata(&dummy_hash));
         assert!(!engine.cancel_fetch_metadata(&dummy_hash));
 
-        let v2_id = TorrentId::from(InfoHashV2::from_bytes([0xcd; 32]));
+        let v2_id = TorrentId::new(None, Some(InfoHashV2::from_bytes([0xcd; 32])));
         assert!(engine.fetch_metadata(&v2_id));
         assert!(!engine.fetch_metadata(&v2_id));
         assert!(engine.cancel_fetch_metadata(&v2_id));
@@ -274,7 +274,7 @@ mod tests {
             if collector
                 .events()
                 .iter()
-                .any(|event| matches!(event, BtEvent::DhtStats { .. }))
+                .any(|event| matches!(event.kind(), BtEventKind::DhtStats(_)))
             {
                 return;
             }

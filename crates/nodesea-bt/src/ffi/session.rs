@@ -1,6 +1,6 @@
 //! Private session/error CXX wire models and their domain conversions.
 
-use crate::BtEvent;
+use crate::{AlertsDropped, BtEvent, BtEventKind, DhtError, ListenFailed, SessionError, UdpError};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -42,40 +42,36 @@ pub(super) use bridge::{
 
 impl From<bridge::SessionErrorPayload> for BtEvent {
     fn from(value: bridge::SessionErrorPayload) -> Self {
-        Self::SessionError {
-            message: value.message,
-        }
+        Self::new(BtEventKind::SessionError(SessionError::from_ffi(
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::ListenFailedPayload> for BtEvent {
     fn from(value: bridge::ListenFailedPayload) -> Self {
-        Self::ListenFailed {
-            message: value.message,
-        }
+        Self::new(BtEventKind::ListenFailed(ListenFailed::from_ffi(
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::UdpErrorPayload> for BtEvent {
     fn from(value: bridge::UdpErrorPayload) -> Self {
-        Self::UdpError {
-            message: value.message,
-        }
+        Self::new(BtEventKind::UdpError(UdpError::from_ffi(value.message)))
     }
 }
 
 impl From<bridge::DhtErrorPayload> for BtEvent {
     fn from(value: bridge::DhtErrorPayload) -> Self {
-        Self::DhtError {
-            message: value.message,
-        }
+        Self::new(BtEventKind::DhtError(DhtError::from_ffi(value.message)))
     }
 }
 
 impl From<bridge::AlertsDroppedPayload> for BtEvent {
     fn from(value: bridge::AlertsDroppedPayload) -> Self {
-        Self::AlertsDropped {
-            message: value.message,
-        }
+        Self::new(BtEventKind::AlertsDropped(AlertsDropped::from_ffi(
+            value.message,
+        )))
     }
 }

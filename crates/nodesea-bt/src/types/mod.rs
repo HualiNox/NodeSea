@@ -5,7 +5,7 @@ mod identity;
 mod node;
 mod sink;
 
-pub use event::{BtEvent, DhtDirection};
-pub use identity::{DhtInfoHash, DhtTarget, InfoHashV1, InfoHashV2, NodeId, TorrentId};
-pub use node::DhtNode;
-pub use sink::{EventCollector, EventSink};
+pub use event::*;
+pub use identity::*;
+pub use node::*;
+pub use sink::*;

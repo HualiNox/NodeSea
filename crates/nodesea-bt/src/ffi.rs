@@ -13,7 +13,7 @@ mod torrent;
 
 use std::net::SocketAddr;
 
-use crate::{BtEvent, DhtTarget, EventSink, TorrentId};
+use crate::{BtEvent, BtEventKind, DhtBootstrap, DhtTarget, EventSink, TorrentId};
 use sink::FfiEventSink;
 
 //===----------------------------------------------------------------------===//
@@ -120,7 +120,9 @@ impl FfiEventSink {
 
     // Callbacks without a payload that emit a fixed domain event.
     fn on_dht_bootstrap(&mut self) {
-        self.emit(BtEvent::DhtBootstrap);
+        self.emit(BtEvent::new(BtEventKind::DhtBootstrap(
+            DhtBootstrap::from_ffi(),
+        )));
     }
 }
 
@@ -152,12 +154,14 @@ pub(super) fn poll_events<S: EventSink>(engine: &mut Engine, sink: &mut S) -> us
 
 /// Starts metadata fetching for a torrent identity.
 pub(super) fn fetch_metadata(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
-    bridge::fetch_metadata(engine.inner.pin_mut(), &torrent_id.into())
+    let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
+    bridge::fetch_metadata(engine.inner.pin_mut(), &payload)
 }
 
 /// Cancels metadata fetching for a torrent identity.
 pub(super) fn cancel_fetch(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
-    bridge::cancel_fetch(engine.inner.pin_mut(), &torrent_id.into())
+    let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
+    bridge::cancel_fetch(engine.inner.pin_mut(), &payload)
 }
 
 /// Requests an asynchronous DHT statistics alert.

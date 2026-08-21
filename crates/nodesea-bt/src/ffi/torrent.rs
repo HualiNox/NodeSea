@@ -1,6 +1,9 @@
 //! Private torrent CXX wire models and their domain conversions.
 
-use crate::{BtEvent, InfoHashV1, InfoHashV2, TorrentId};
+use crate::{
+    AddTorrent, AddTorrentError, BtEvent, BtEventKind, FileError, InfoHashV1, InfoHashV2,
+    MetadataFailed, MetadataReceived, TorrentDeleteFailed, TorrentError, TorrentId,
+};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -82,8 +85,8 @@ pub(super) use bridge::{
     MetadataReceivedPayload, TorrentDeleteFailedPayload, TorrentErrorPayload, TorrentIdPayload,
 };
 
-impl From<&TorrentId> for bridge::TorrentIdPayload {
-    fn from(value: &TorrentId) -> Self {
+impl bridge::TorrentIdPayload {
+    pub(super) fn from_torrent_id(value: &TorrentId) -> Self {
         Self {
             v1: value.v1().map_or([0; 20], |hash| *hash.as_bytes()),
             v2: value.v2().map_or([0; 32], |hash| *hash.as_bytes()),
@@ -91,86 +94,75 @@ impl From<&TorrentId> for bridge::TorrentIdPayload {
             has_v2: value.has_v2(),
         }
     }
+
+    fn into_torrent_id(self) -> TorrentId {
+        TorrentId::new(
+            self.has_v1.then(|| InfoHashV1::from_bytes(self.v1)),
+            self.has_v2.then(|| InfoHashV2::from_bytes(self.v2)),
+        )
+    }
 }
 
 impl From<bridge::MetadataFailedPayload> for BtEvent {
     fn from(value: bridge::MetadataFailedPayload) -> Self {
-        Self::MetadataFailed {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-        }
+        Self::new(BtEventKind::MetadataFailed(MetadataFailed::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::MetadataReceivedPayload> for BtEvent {
     fn from(value: bridge::MetadataReceivedPayload) -> Self {
-        Self::MetadataReceived {
-            torrent_id: value.torrent_id.into(),
-            data: value.data,
-        }
+        Self::new(BtEventKind::MetadataReceived(MetadataReceived::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.data,
+        )))
     }
 }
 
 impl From<bridge::AddTorrentErrorPayload> for BtEvent {
     fn from(value: bridge::AddTorrentErrorPayload) -> Self {
-        Self::AddTorrentError {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-            error_value: value.error_value,
-            error_category: value.error_category,
-        }
+        Self::new(BtEventKind::AddTorrentError(AddTorrentError::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+            value.error_value,
+            value.error_category,
+        )))
     }
 }
 
 impl From<bridge::AddTorrentPayload> for BtEvent {
     fn from(value: bridge::AddTorrentPayload) -> Self {
-        Self::AddTorrent {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-        }
+        Self::new(BtEventKind::AddTorrent(AddTorrent::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::TorrentErrorPayload> for BtEvent {
     fn from(value: bridge::TorrentErrorPayload) -> Self {
-        Self::TorrentError {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-        }
+        Self::new(BtEventKind::TorrentError(TorrentError::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::FileErrorPayload> for BtEvent {
     fn from(value: bridge::FileErrorPayload) -> Self {
-        Self::FileError {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-        }
+        Self::new(BtEventKind::FileError(FileError::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
     }
 }
 
 impl From<bridge::TorrentDeleteFailedPayload> for BtEvent {
     fn from(value: bridge::TorrentDeleteFailedPayload) -> Self {
-        Self::TorrentDeleteFailed {
-            torrent_id: value.torrent_id.into(),
-            message: value.message,
-        }
-    }
-}
-
-impl From<bridge::TorrentIdPayload> for TorrentId {
-    fn from(value: bridge::TorrentIdPayload) -> Self {
-        Self::new(
-            if value.has_v1 {
-                Some(InfoHashV1::from_bytes(value.v1))
-            } else {
-                None
-            },
-            if value.has_v2 {
-                Some(InfoHashV2::from_bytes(value.v2))
-            } else {
-                None
-            },
-        )
+        Self::new(BtEventKind::TorrentDeleteFailed(
+            TorrentDeleteFailed::from_ffi(value.torrent_id.into_torrent_id(), value.message),
+        ))
     }
 }
