@@ -3,8 +3,8 @@
 use std::{net::SocketAddr, time::Duration};
 
 use crate::{
-    BtEvent, BtEventKind, DhtAnnounce, DhtGetPeers, DhtInfoHash, DhtLiveNodes, DhtNode, DhtPkt,
-    DhtSampleInfohashes, DhtStats, NodeId,
+    BtEvent, BtEventKind, DhtAnnounce, DhtGetPeers, DhtInfoHash, DhtLiveNodes, DhtLog, DhtNode,
+    DhtPkt, DhtSampleInfohashes, DhtStats, NodeId,
 };
 
 #[cxx::bridge(namespace = "nodesea::bt")]
@@ -106,12 +106,18 @@ mod bridge {
         /// Nodes currently present in the routing table.
         nodes: Vec<DhtNodePayload>,
     }
+
+    /// Payload for a DHT log alert.
+    pub(super) struct DhtLogPayload {
+        /// Log message reported by libtorrent.
+        message: String,
+    }
 }
 
 // These are narrow, named entries for the canonical callback bridge. The
 // bridge module itself remains private and no wildcard re-export is used.
 pub(super) use bridge::{
-    DhtAnnouncePayload, DhtGetPeersPayload, DhtLiveNodesPayload, DhtPktPayload,
+    DhtAnnouncePayload, DhtGetPeersPayload, DhtLiveNodesPayload, DhtLogPayload, DhtPktPayload,
     DhtSampleInfohashesPayload, DhtStatsPayload, UdpEndpointPayload,
 };
 
@@ -220,5 +226,11 @@ impl From<bridge::DhtLiveNodesPayload> for BtEvent {
                 .map(bridge::DhtNodePayload::into_dht_node)
                 .collect(),
         )))
+    }
+}
+
+impl From<bridge::DhtLogPayload> for BtEvent {
+    fn from(value: bridge::DhtLogPayload) -> Self {
+        Self::new(BtEventKind::DhtLog(DhtLog::from_ffi(value.message)))
     }
 }

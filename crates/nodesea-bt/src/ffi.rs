@@ -7,6 +7,7 @@
 #[macro_use]
 mod macros;
 mod dht;
+mod peer;
 mod session;
 mod sink;
 mod torrent;
@@ -46,12 +47,27 @@ mod bridge {
         fn on_dht_sample_infohashes(self: &mut FfiEventSink, event: DhtSampleInfohashesPayload);
         fn on_dht_pkt(self: &mut FfiEventSink, event: DhtPktPayload);
         fn on_dht_live_nodes(self: &mut FfiEventSink, event: DhtLiveNodesPayload);
+        fn on_session_stats(self: &mut FfiEventSink, event: SessionStatsPayload);
+        fn on_external_ip(self: &mut FfiEventSink, event: ExternalIpPayload);
+        fn on_torrent_removed(self: &mut FfiEventSink, event: TorrentRemovedPayload);
+        fn on_peer_connect(self: &mut FfiEventSink, event: PeerConnectPayload);
+        fn on_peer_disconnected(self: &mut FfiEventSink, event: PeerDisconnectedPayload);
+        fn on_peer_error(self: &mut FfiEventSink, event: PeerErrorPayload);
+        fn on_session_log(self: &mut FfiEventSink, event: SessionLogPayload);
+        fn on_torrent_log(self: &mut FfiEventSink, event: TorrentLogPayload);
+        fn on_peer_log(self: &mut FfiEventSink, event: PeerLogPayload);
+        fn on_dht_log(self: &mut FfiEventSink, event: DhtLogPayload);
+        fn on_piece_finished(self: &mut FfiEventSink, event: PieceFinishedPayload);
+        fn on_block_finished(self: &mut FfiEventSink, event: BlockFinishedPayload);
+        fn on_read_piece(self: &mut FfiEventSink, event: ReadPiecePayload);
+        fn on_save_resume_data(self: &mut FfiEventSink, event: SaveResumeDataPayload);
     }
 
     unsafe extern "C++" {
         include!("src/ffi/dht.rs.h");
         include!("src/ffi/session.rs.h");
         include!("src/ffi/torrent.rs.h");
+        include!("src/ffi/peer.rs.h");
         include!("nodesea_bt/engine.hpp");
 
         type DhtAnnouncePayload = crate::ffi::dht::DhtAnnouncePayload;
@@ -73,6 +89,20 @@ mod bridge {
         type DhtSampleInfohashesPayload = crate::ffi::dht::DhtSampleInfohashesPayload;
         type DhtPktPayload = crate::ffi::dht::DhtPktPayload;
         type DhtLiveNodesPayload = crate::ffi::dht::DhtLiveNodesPayload;
+        type DhtLogPayload = crate::ffi::dht::DhtLogPayload;
+        type SessionStatsPayload = crate::ffi::session::SessionStatsPayload;
+        type ExternalIpPayload = crate::ffi::session::ExternalIpPayload;
+        type SessionLogPayload = crate::ffi::session::SessionLogPayload;
+        type TorrentRemovedPayload = crate::ffi::torrent::TorrentRemovedPayload;
+        type TorrentLogPayload = crate::ffi::torrent::TorrentLogPayload;
+        type ReadPiecePayload = crate::ffi::torrent::ReadPiecePayload;
+        type SaveResumeDataPayload = crate::ffi::torrent::SaveResumeDataPayload;
+        type PeerConnectPayload = crate::ffi::peer::PeerConnectPayload;
+        type PeerDisconnectedPayload = crate::ffi::peer::PeerDisconnectedPayload;
+        type PeerErrorPayload = crate::ffi::peer::PeerErrorPayload;
+        type PeerLogPayload = crate::ffi::peer::PeerLogPayload;
+        type PieceFinishedPayload = crate::ffi::peer::PieceFinishedPayload;
+        type BlockFinishedPayload = crate::ffi::peer::BlockFinishedPayload;
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
@@ -114,6 +144,20 @@ impl FfiEventSink {
     event_callback!(on_dht_sample_infohashes, bridge::DhtSampleInfohashesPayload);
     event_callback!(on_dht_pkt, bridge::DhtPktPayload);
     event_callback!(on_dht_live_nodes, bridge::DhtLiveNodesPayload);
+    event_callback!(on_session_stats, bridge::SessionStatsPayload);
+    event_callback!(on_external_ip, bridge::ExternalIpPayload);
+    event_callback!(on_torrent_removed, bridge::TorrentRemovedPayload);
+    event_callback!(on_peer_connect, bridge::PeerConnectPayload);
+    event_callback!(on_peer_disconnected, bridge::PeerDisconnectedPayload);
+    event_callback!(on_peer_error, bridge::PeerErrorPayload);
+    event_callback!(on_session_log, bridge::SessionLogPayload);
+    event_callback!(on_torrent_log, bridge::TorrentLogPayload);
+    event_callback!(on_peer_log, bridge::PeerLogPayload);
+    event_callback!(on_dht_log, bridge::DhtLogPayload);
+    event_callback!(on_piece_finished, bridge::PieceFinishedPayload);
+    event_callback!(on_block_finished, bridge::BlockFinishedPayload);
+    event_callback!(on_read_piece, bridge::ReadPiecePayload);
+    event_callback!(on_save_resume_data, bridge::SaveResumeDataPayload);
 
     // Callbacks without a payload that emit a fixed domain event.
     fn on_dht_bootstrap(&mut self) {

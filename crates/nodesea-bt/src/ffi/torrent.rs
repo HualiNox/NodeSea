@@ -2,7 +2,8 @@
 
 use crate::{
     AddTorrent, AddTorrentError, BtEvent, BtEventKind, FileError, InfoHashV1, InfoHashV2,
-    MetadataFailed, MetadataReceived, TorrentDeleteFailed, TorrentError, TorrentId,
+    MetadataFailed, MetadataReceived, ReadPiece, SaveResumeData, TorrentDeleteFailed, TorrentError,
+    TorrentId, TorrentLog, TorrentRemoved,
 };
 
 #[cxx::bridge(namespace = "nodesea::bt")]
@@ -61,6 +62,44 @@ mod bridge {
         message: String,
     }
 
+    /// Payload for a removed torrent.
+    pub(super) struct TorrentRemovedPayload {
+        /// Combined torrent identity associated with the alert.
+        torrent_id: TorrentIdPayload,
+        /// Alert message reported by libtorrent.
+        message: String,
+    }
+
+    /// Payload for a torrent log alert.
+    pub(super) struct TorrentLogPayload {
+        /// Combined torrent identity associated with the alert.
+        torrent_id: TorrentIdPayload,
+        /// Log message reported by libtorrent.
+        message: String,
+    }
+
+    /// Payload for a completed piece read.
+    pub(super) struct ReadPiecePayload {
+        /// Combined torrent identity associated with the alert.
+        torrent_id: TorrentIdPayload,
+        /// Piece index that was read.
+        piece_index: i32,
+        /// Number of bytes read.
+        size: i32,
+        /// Piece data, empty when the read failed.
+        data: Vec<u8>,
+        /// Alert message reported by libtorrent.
+        message: String,
+    }
+
+    /// Payload for saved resume data.
+    pub(super) struct SaveResumeDataPayload {
+        /// Combined torrent identity associated with the alert.
+        torrent_id: TorrentIdPayload,
+        /// Alert message reported by libtorrent.
+        message: String,
+    }
+
     /// Wire representation of a v1, v2, or hybrid torrent identity.
     pub(super) struct TorrentIdPayload {
         /// SHA-1 v1 infohash bytes, or zeroes when no v1 hash is present.
@@ -76,7 +115,8 @@ mod bridge {
 
 pub(super) use bridge::{
     AddTorrentPayload, FileErrorPayload, MetadataFailedPayload, MetadataReceivedPayload,
-    TorrentDeleteFailedPayload, TorrentErrorPayload, TorrentIdPayload,
+    ReadPiecePayload, SaveResumeDataPayload, TorrentDeleteFailedPayload, TorrentErrorPayload,
+    TorrentIdPayload, TorrentLogPayload, TorrentRemovedPayload,
 };
 
 impl bridge::TorrentIdPayload {
@@ -89,7 +129,7 @@ impl bridge::TorrentIdPayload {
         }
     }
 
-    fn into_torrent_id(self) -> TorrentId {
+    pub(super) fn into_torrent_id(self) -> TorrentId {
         TorrentId::new(
             self.has_v1.then(|| InfoHashV1::from_bytes(self.v1)),
             self.has_v2.then(|| InfoHashV2::from_bytes(self.v2)),
@@ -150,5 +190,44 @@ impl From<bridge::TorrentDeleteFailedPayload> for BtEvent {
         Self::new(BtEventKind::TorrentDeleteFailed(
             TorrentDeleteFailed::from_ffi(value.torrent_id.into_torrent_id(), value.message),
         ))
+    }
+}
+
+impl From<bridge::TorrentRemovedPayload> for BtEvent {
+    fn from(value: bridge::TorrentRemovedPayload) -> Self {
+        Self::new(BtEventKind::TorrentRemoved(TorrentRemoved::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
+    }
+}
+
+impl From<bridge::TorrentLogPayload> for BtEvent {
+    fn from(value: bridge::TorrentLogPayload) -> Self {
+        Self::new(BtEventKind::TorrentLog(TorrentLog::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
+    }
+}
+
+impl From<bridge::ReadPiecePayload> for BtEvent {
+    fn from(value: bridge::ReadPiecePayload) -> Self {
+        Self::new(BtEventKind::ReadPiece(ReadPiece::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.piece_index,
+            value.size,
+            value.data,
+            value.message,
+        )))
+    }
+}
+
+impl From<bridge::SaveResumeDataPayload> for BtEvent {
+    fn from(value: bridge::SaveResumeDataPayload) -> Self {
+        Self::new(BtEventKind::SaveResumeData(SaveResumeData::from_ffi(
+            value.torrent_id.into_torrent_id(),
+            value.message,
+        )))
     }
 }

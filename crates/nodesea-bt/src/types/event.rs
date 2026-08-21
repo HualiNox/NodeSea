@@ -179,21 +179,124 @@ event_payload!("DHT live nodes event payload.", DhtLiveNodes {
     local_node_id: NodeId,
     nodes: Vec<DhtNode>,
 });
+event_payload!("Session statistics event payload.", SessionStats {
+    counters: Vec<i64>,
+    message: String,
+});
+event_payload!(
+    "External IP event payload.",
+    ExternalIp {
+        address: String,
+        message: String,
+    }
+);
+event_payload!(
+    "Torrent removed event payload.",
+    TorrentRemoved {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!(
+    "Peer connected event payload.",
+    PeerConnect {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!(
+    "Peer disconnected event payload.",
+    PeerDisconnected {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!(
+    "Peer error event payload.",
+    PeerError {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!("Session log event payload.", SessionLog { message: String });
+event_payload!(
+    "Torrent log event payload.",
+    TorrentLog {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!(
+    "Peer log event payload.",
+    PeerLog {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
+event_payload!("DHT log event payload.", DhtLog { message: String });
+event_payload!(
+    "Piece finished event payload.",
+    PieceFinished {
+        torrent_id: TorrentId,
+        piece_index: i32,
+        message: String,
+    }
+);
+event_payload!(
+    "Block finished event payload.",
+    BlockFinished {
+        torrent_id: TorrentId,
+        piece_index: i32,
+        block_index: i32,
+        message: String,
+    }
+);
+event_payload!("Read piece event payload.", ReadPiece {
+    torrent_id: TorrentId,
+    piece_index: i32,
+    size: i32,
+    data: Vec<u8>,
+    message: String,
+});
+event_payload!(
+    "Resume data saved event payload.",
+    SaveResumeData {
+        torrent_id: TorrentId,
+        message: String,
+    }
+);
 /// A BitTorrent event payload produced by the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BtEventKind {
+    //===----------------------------------------------------------------------===//
+    // DHT events
+    //===----------------------------------------------------------------------===//
     /// A DHT announce event.
     DhtAnnounce(DhtAnnounce),
-    /// Metadata was successfully received.
-    MetadataReceived(MetadataReceived),
-    /// Metadata failed to be received.
-    MetadataFailed(MetadataFailed),
     /// DHT statistics were received.
     DhtStats(DhtStats),
     /// DHT bootstrap completed.
     DhtBootstrap(DhtBootstrap),
     /// A DHT get-peers event was received.
     DhtGetPeers(DhtGetPeers),
+    /// Sample infohashes were received from a DHT node.
+    DhtSampleInfohashes(DhtSampleInfohashes),
+    /// A raw DHT packet was received or sent.
+    DhtPkt(DhtPkt),
+    /// Live nodes were reported for one local DHT routing table.
+    DhtLiveNodes(DhtLiveNodes),
+    /// A DHT operation failed.
+    DhtError(DhtError),
+    /// A DHT log message was received.
+    DhtLog(DhtLog),
+
+    //===----------------------------------------------------------------------===//
+    // Torrent events
+    //===----------------------------------------------------------------------===//
+    /// Metadata was successfully received.
+    MetadataReceived(MetadataReceived),
+    /// Metadata failed to be received.
+    MetadataFailed(MetadataFailed),
     /// A torrent-add operation completed.
     AddTorrent(AddTorrent),
     /// A torrent entered an error state.
@@ -202,22 +305,56 @@ pub enum BtEventKind {
     FileError(FileError),
     /// Deleting a torrent failed.
     TorrentDeleteFailed(TorrentDeleteFailed),
+    /// A torrent was removed.
+    TorrentRemoved(TorrentRemoved),
+
+    //===----------------------------------------------------------------------===//
+    // Session events
+    //===----------------------------------------------------------------------===//
     /// The session reported an error.
     SessionError(SessionError),
     /// Listening on the configured port failed.
     ListenFailed(ListenFailed),
     /// A UDP operation failed.
     UdpError(UdpError),
-    /// A DHT operation failed.
-    DhtError(DhtError),
     /// The session dropped alerts before they were polled.
     AlertsDropped(AlertsDropped),
-    /// Sample infohashes were received from a DHT node.
-    DhtSampleInfohashes(DhtSampleInfohashes),
-    /// A raw DHT packet was received or sent.
-    DhtPkt(DhtPkt),
-    /// Live nodes were reported for one local DHT routing table.
-    DhtLiveNodes(DhtLiveNodes),
+    /// Session statistics were received.
+    SessionStats(SessionStats),
+    /// The external IP address was reported.
+    ExternalIp(ExternalIp),
+    /// A session log message was received.
+    SessionLog(SessionLog),
+
+    //===----------------------------------------------------------------------===//
+    // Log events
+    //===----------------------------------------------------------------------===//
+    /// A torrent log message was received.
+    TorrentLog(TorrentLog),
+    /// A peer log message was received.
+    PeerLog(PeerLog),
+
+    //===----------------------------------------------------------------------===//
+    // Peer events
+    //===----------------------------------------------------------------------===//
+    /// A peer connected.
+    PeerConnect(PeerConnect),
+    /// A peer disconnected.
+    PeerDisconnected(PeerDisconnected),
+    /// A peer error was reported.
+    PeerError(PeerError),
+
+    //===----------------------------------------------------------------------===//
+    // Piece and storage events
+    //===----------------------------------------------------------------------===//
+    /// A piece finished downloading.
+    PieceFinished(PieceFinished),
+    /// A block finished downloading.
+    BlockFinished(BlockFinished),
+    /// A piece read operation completed.
+    ReadPiece(ReadPiece),
+    /// Resume data was saved.
+    SaveResumeData(SaveResumeData),
 }
 
 #[cfg(test)]
@@ -268,6 +405,53 @@ mod tests {
             BtEventKind::UdpError(UdpError::from_ffi("udp error".to_string())),
             BtEventKind::DhtError(DhtError::from_ffi("dht error".to_string())),
             BtEventKind::AlertsDropped(AlertsDropped::from_ffi("dropped alerts".to_string())),
+            BtEventKind::SessionStats(SessionStats::from_ffi(
+                vec![1, 2, 3],
+                "session stats".to_string(),
+            )),
+            BtEventKind::ExternalIp(ExternalIp::from_ffi(
+                "203.0.113.1".to_string(),
+                "external ip".to_string(),
+            )),
+            BtEventKind::TorrentRemoved(TorrentRemoved::from_ffi(
+                torrent_id,
+                "torrent removed".to_string(),
+            )),
+            BtEventKind::PeerConnect(PeerConnect::from_ffi(
+                torrent_id,
+                "peer connected".to_string(),
+            )),
+            BtEventKind::PeerDisconnected(PeerDisconnected::from_ffi(
+                torrent_id,
+                "peer disconnected".to_string(),
+            )),
+            BtEventKind::PeerError(PeerError::from_ffi(torrent_id, "peer error".to_string())),
+            BtEventKind::SessionLog(SessionLog::from_ffi("session log".to_string())),
+            BtEventKind::TorrentLog(TorrentLog::from_ffi(torrent_id, "torrent log".to_string())),
+            BtEventKind::PeerLog(PeerLog::from_ffi(torrent_id, "peer log".to_string())),
+            BtEventKind::DhtLog(DhtLog::from_ffi("dht log".to_string())),
+            BtEventKind::PieceFinished(PieceFinished::from_ffi(
+                torrent_id,
+                4,
+                "piece finished".to_string(),
+            )),
+            BtEventKind::BlockFinished(BlockFinished::from_ffi(
+                torrent_id,
+                4,
+                2,
+                "block finished".to_string(),
+            )),
+            BtEventKind::ReadPiece(ReadPiece::from_ffi(
+                torrent_id,
+                4,
+                3,
+                vec![1, 2, 3],
+                "piece read".to_string(),
+            )),
+            BtEventKind::SaveResumeData(SaveResumeData::from_ffi(
+                torrent_id,
+                "resume data saved".to_string(),
+            )),
         ];
 
         for kind in kinds {

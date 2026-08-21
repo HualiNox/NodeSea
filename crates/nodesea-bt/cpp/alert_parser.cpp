@@ -353,6 +353,203 @@ std::size_t dispatch_alerts(
       break;
     }
 
+    // Session stats alert.
+    case lt::session_stats_alert::alert_type: {
+      auto* a = static_cast<lt::session_stats_alert*>(alert);
+      rust::Vec<std::int64_t> counters;
+      for (std::int64_t value : a->counters()) {
+        counters.push_back(value);
+      }
+
+      sink.on_session_stats(SessionStatsPayload{
+          .counters = std::move(counters),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // External IP alert.
+    case lt::external_ip_alert::alert_type: {
+      auto* a = static_cast<lt::external_ip_alert*>(alert);
+
+      sink.on_external_ip(ExternalIpPayload{
+          .address = rust::String(a->external_address.to_string()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Torrent removed alert.
+    case lt::torrent_removed_alert::alert_type: {
+      auto* a = static_cast<lt::torrent_removed_alert*>(alert);
+
+      sink.on_torrent_removed(TorrentRemovedPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Peer connect alert.
+    case lt::peer_connect_alert::alert_type: {
+      auto* a = static_cast<lt::peer_connect_alert*>(alert);
+
+      sink.on_peer_connect(PeerConnectPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Peer disconnected alert.
+    case lt::peer_disconnected_alert::alert_type: {
+      auto* a = static_cast<lt::peer_disconnected_alert*>(alert);
+
+      sink.on_peer_disconnected(PeerDisconnectedPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Peer error alert.
+    case lt::peer_error_alert::alert_type: {
+      auto* a = static_cast<lt::peer_error_alert*>(alert);
+
+      sink.on_peer_error(PeerErrorPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Session log alert.
+    case lt::log_alert::alert_type: {
+      auto* a = static_cast<lt::log_alert*>(alert);
+
+      sink.on_session_log(SessionLogPayload{
+          .message = rust::String(a->log_message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Torrent log alert.
+    case lt::torrent_log_alert::alert_type: {
+      auto* a = static_cast<lt::torrent_log_alert*>(alert);
+
+      sink.on_torrent_log(TorrentLogPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->log_message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Peer log alert.
+    case lt::peer_log_alert::alert_type: {
+      auto* a = static_cast<lt::peer_log_alert*>(alert);
+
+      sink.on_peer_log(PeerLogPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->log_message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // DHT log alert.
+    case lt::dht_log_alert::alert_type: {
+      auto* a = static_cast<lt::dht_log_alert*>(alert);
+
+      sink.on_dht_log(DhtLogPayload{
+          .message = rust::String(a->log_message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Piece finished alert.
+    case lt::piece_finished_alert::alert_type: {
+      auto* a = static_cast<lt::piece_finished_alert*>(alert);
+
+      sink.on_piece_finished(PieceFinishedPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .piece_index = static_cast<std::int32_t>(a->piece_index),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Block finished alert.
+    case lt::block_finished_alert::alert_type: {
+      auto* a = static_cast<lt::block_finished_alert*>(alert);
+
+      sink.on_block_finished(BlockFinishedPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .piece_index = static_cast<std::int32_t>(a->piece_index),
+          .block_index = static_cast<std::int32_t>(a->block_index),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Read piece alert.
+    case lt::read_piece_alert::alert_type: {
+      auto* a = static_cast<lt::read_piece_alert*>(alert);
+      rust::Vec<std::uint8_t> data;
+      if (a->buffer && a->size > 0) {
+        data.reserve(static_cast<std::size_t>(a->size));
+        for (int index = 0; index < a->size; ++index) {
+          data.push_back(static_cast<std::uint8_t>(a->buffer[index]));
+        }
+      }
+
+      sink.on_read_piece(ReadPiecePayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .piece_index = static_cast<std::int32_t>(a->piece),
+          .size = static_cast<std::int32_t>(a->size),
+          .data = std::move(data),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
+    // Save resume data alert.
+    case lt::save_resume_data_alert::alert_type: {
+      auto* a = static_cast<lt::save_resume_data_alert*>(alert);
+
+      sink.on_save_resume_data(SaveResumeDataPayload{
+          .torrent_id = convert_to_torrent_id(a->handle.info_hashes()),
+          .message = rust::String(a->message()),
+      });
+
+      ++dispatched;
+      break;
+    }
+
     default:
       break;
     }

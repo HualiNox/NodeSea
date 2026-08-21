@@ -1,6 +1,9 @@
 //! Private session/error CXX wire models and their domain conversions.
 
-use crate::{AlertsDropped, BtEvent, BtEventKind, DhtError, ListenFailed, SessionError, UdpError};
+use crate::{
+    AlertsDropped, BtEvent, BtEventKind, DhtError, ExternalIp, ListenFailed, SessionError,
+    SessionLog, SessionStats, UdpError,
+};
 
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -33,11 +36,33 @@ mod bridge {
         /// Human-readable error description.
         message: String,
     }
+
+    /// Payload for session statistics.
+    pub(super) struct SessionStatsPayload {
+        /// Counter values in libtorrent metric order.
+        counters: Vec<i64>,
+        /// Human-readable statistics message.
+        message: String,
+    }
+
+    /// Payload for the external IP alert.
+    pub(super) struct ExternalIpPayload {
+        /// External IP address reported by libtorrent.
+        address: String,
+        /// Human-readable alert message.
+        message: String,
+    }
+
+    /// Payload for a session log alert.
+    pub(super) struct SessionLogPayload {
+        /// Log message reported by libtorrent.
+        message: String,
+    }
 }
 
 pub(super) use bridge::{
-    AlertsDroppedPayload, DhtErrorPayload, ListenFailedPayload, SessionErrorPayload,
-    UdpErrorPayload,
+    AlertsDroppedPayload, DhtErrorPayload, ExternalIpPayload, ListenFailedPayload,
+    SessionErrorPayload, SessionLogPayload, SessionStatsPayload, UdpErrorPayload,
 };
 
 impl From<bridge::SessionErrorPayload> for BtEvent {
@@ -73,5 +98,29 @@ impl From<bridge::AlertsDroppedPayload> for BtEvent {
         Self::new(BtEventKind::AlertsDropped(AlertsDropped::from_ffi(
             value.message,
         )))
+    }
+}
+
+impl From<bridge::SessionStatsPayload> for BtEvent {
+    fn from(value: bridge::SessionStatsPayload) -> Self {
+        Self::new(BtEventKind::SessionStats(SessionStats::from_ffi(
+            value.counters,
+            value.message,
+        )))
+    }
+}
+
+impl From<bridge::ExternalIpPayload> for BtEvent {
+    fn from(value: bridge::ExternalIpPayload) -> Self {
+        Self::new(BtEventKind::ExternalIp(ExternalIp::from_ffi(
+            value.address,
+            value.message,
+        )))
+    }
+}
+
+impl From<bridge::SessionLogPayload> for BtEvent {
+    fn from(value: bridge::SessionLogPayload) -> Self {
+        Self::new(BtEventKind::SessionLog(SessionLog::from_ffi(value.message)))
     }
 }

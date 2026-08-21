@@ -14,6 +14,7 @@ fn json_string(value: impl AsRef<str>) -> String {
 const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
     "src/ffi.rs",
     "src/ffi/dht.rs",
+    "src/ffi/peer.rs",
     "src/ffi/session.rs",
     "src/ffi/torrent.rs",
 ];
