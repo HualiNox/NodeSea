@@ -1,6 +1,9 @@
 //! Public BitTorrent engine facade.
 
+mod config;
 mod queue;
+
+pub use config::*;
 
 use std::{collections::VecDeque, net::SocketAddr};
 
