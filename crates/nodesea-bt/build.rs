@@ -18,6 +18,9 @@ const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
     "src/ffi/torrent.rs",
 ];
 
+// Native C++ sources compiled into the Rust FFI library.
+const NATIVE_SOURCES: &[&str] = &["cpp/engine.cpp", "cpp/alert_parser.cpp", "cpp/helper.cpp"];
+
 fn main() {
     // CMake owns libtorrent's feature policy and derives this profile from
     // Cargo's PROFILE, OPT_LEVEL, and DEBUG environment variables.
@@ -36,8 +39,9 @@ fn main() {
     cxx_build::CFG.include_prefix = "";
     let mut bridge = cxx_build::bridges(PRODUCTION_BRIDGE_SOURCES.iter().copied());
 
-    bridge.file("cpp/engine.cpp");
-    bridge.file("cpp/helper.cpp");
+    for source in NATIVE_SOURCES {
+        bridge.file(source);
+    }
 
     // Include directories
     bridge
@@ -64,6 +68,7 @@ fn main() {
     let workspace_root = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
     let compile_commands = workspace_root.join("compile_commands.json");
     let engine_source = Path::new(&manifest_dir).join("cpp/engine.cpp");
+    let alert_parser_source = Path::new(&manifest_dir).join("cpp/alert_parser.cpp");
     let helper_source = Path::new(&manifest_dir).join("cpp/helper.cpp");
     let installed_include = cmake_include;
     let editor_include = Path::new(&manifest_dir).join(".generated");
@@ -105,9 +110,16 @@ fn main() {
         common_arguments,
         json_string(helper_source.to_string_lossy()),
     );
+    let alert_parser_command = format!(
+        "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
+        json_string(&manifest_dir),
+        json_string(alert_parser_source.to_string_lossy()),
+        common_arguments,
+        json_string(alert_parser_source.to_string_lossy()),
+    );
     fs::write(
         compile_commands,
-        format!("[{engine_command},{helper_command}]"),
+        format!("[{engine_command},{alert_parser_command},{helper_command}]"),
     )
     .unwrap();
 
@@ -163,8 +175,10 @@ fn main() {
         "src/types",
         // Production C++ bridge sources and headers.
         "cpp/engine.cpp",
+        "cpp/alert_parser.cpp",
         "cpp/helper.cpp",
         "include/nodesea_bt/engine.hpp",
+        "include/nodesea_bt/alert_parser.hpp",
         "include/nodesea_bt/helper.hpp",
     ];
     for path in rerun_paths {
