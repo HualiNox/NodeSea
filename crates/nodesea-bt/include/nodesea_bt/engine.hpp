@@ -13,6 +13,7 @@ namespace nodesea::bt {
 struct FfiEventSink;
 struct UdpEndpointPayload;
 struct TorrentIdPayload;
+struct SettingsPackPayload;
 
 // BitTorrent observation and metadata fetching engine wrapper.
 class Engine {
@@ -21,7 +22,7 @@ private:
   std::unique_ptr<Impl> impl_;
 
 public:
-  Engine();
+  Engine(SettingsPackPayload const& settings_pack);
   ~Engine();
 
   Engine(const Engine&) = delete;
@@ -52,7 +53,7 @@ public:
 };
 
 // Creates a new BitTorrent engine instance.
-std::unique_ptr<Engine> new_engine();
+std::unique_ptr<Engine> new_engine(SettingsPackPayload const& settings_pack);
 
 // -----------------------------------------------------------------------------
 // CXX FFI Bridge Functions

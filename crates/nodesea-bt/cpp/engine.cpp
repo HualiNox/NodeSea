@@ -9,12 +9,12 @@
 #include "nodesea_bt/alert_parser.hpp"
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
+#include "src/ffi/config.rs.h"
 #include "src/ffi/dht.rs.h"
 #include "src/ffi/torrent.rs.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <format>
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert.hpp>
 #include <libtorrent/alert_types.hpp>
@@ -29,32 +29,9 @@
 #include <libtorrent/torrent_info.hpp>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-// ----------------------------------------------------------------------------
-// Configuration
-// -----------------------------------------------------------------------------
-
-// Default listening port for BitTorrent connections.
-constexpr std::uint16_t DEFAULT_PORT = 6881;
-
-// Random port selection fallback when default port is unavailable.
-constexpr std::uint16_t RANDOM_PORT = 0;
-
-// Format string for listening interfaces: IPv4 and IPv6 addresses.
-constexpr std::string_view LISTEN_ADDR_FORMAT = "0.0.0.0:{0},[::]:{0}";
-
-// DHT bootstrap nodes for peer discovery.
-constexpr std::string_view DHT_BOOTSTRAP_NODES = "dht.libtorrent.org:25401,"
-                                                 "router.bittorrent.com:6881,"
-                                                 "dht.transmissionbt.com:6881";
-
-// Alert categories to enable for the session.
-constexpr auto ALERT_CATEGORIES = lt::alert_category::dht | lt::alert_category::dht_operation |
-                                  lt::alert_category::status | lt::alert_category::error;
 
 // ----------------------------------------------------------------------------
 // Engine Implementation
@@ -68,24 +45,26 @@ struct Engine::Impl {
   std::unordered_map<std::string, lt::torrent_handle> archive_fetches_;
 };
 
-Engine::Engine() : impl_(std::make_unique<Impl>()) {
+Engine::Engine(SettingsPackPayload const& settings_pack) : impl_(std::make_unique<Impl>()) {
   lt::settings_pack sp;
 
-  // Configure alert categories and enable DHT.
-  sp.set_int(lt::settings_pack::alert_mask, ALERT_CATEGORIES);
-
-  // Enable DHT.
-  sp.set_bool(lt::settings_pack::enable_dht, true);
-
-  // Configure listening interfaces with fallback.
-  if (is_port_available(DEFAULT_PORT)) {
-    sp.set_str(lt::settings_pack::listen_interfaces, std::format(LISTEN_ADDR_FORMAT, DEFAULT_PORT));
-  } else {
-    sp.set_str(lt::settings_pack::listen_interfaces, std::format(LISTEN_ADDR_FORMAT, RANDOM_PORT));
+  // Apply settings from the provided SettingsPackPayload.
+  for (auto const& setting : settings_pack.settings) {
+    switch (setting.kind) {
+    case SettingKind::Int:
+      sp.set_int(setting.key, setting.int_value);
+      break;
+    case SettingKind::Bool:
+      sp.set_bool(setting.key, setting.bool_value);
+      break;
+    case SettingKind::String:
+      sp.set_str(setting.key, std::string(setting.string_value));
+      break;
+    default:
+      // Unknown setting type; ignore.
+      break;
+    }
   }
-
-  // Configure DHT bootstrap nodes.
-  sp.set_str(lt::settings_pack::dht_bootstrap_nodes, std::string(DHT_BOOTSTRAP_NODES));
 
   // Start the session.
   impl_->session_ = std::make_unique<lt::session>(std::move(sp));
@@ -93,8 +72,8 @@ Engine::Engine() : impl_(std::make_unique<Impl>()) {
 
 Engine::~Engine() = default;
 
-std::unique_ptr<Engine> new_engine() {
-  return std::make_unique<Engine>();
+std::unique_ptr<Engine> new_engine(SettingsPackPayload const& settings_pack) {
+  return std::make_unique<Engine>(settings_pack);
 }
 
 std::size_t Engine::poll_events(FfiEventSink& sink) {

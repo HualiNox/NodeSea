@@ -16,24 +16,6 @@ const uint8_t INFO_HASH_V1_SIZE = 20;
 const uint8_t INFO_HASH_V2_SIZE = 32;
 const uint8_t KEY_FLAG_SIZE = 2;
 
-bool is_port_available(uint16_t port) {
-  // Create a UDP socket to probe local port availability
-  int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) {
-    return false;
-  }
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(port);
-
-  int res = ::bind(sock, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr));
-  ::close(sock);
-
-  return res == 0;
-}
-
 nodesea::bt::TorrentIdPayload convert_to_torrent_id(lt::info_hash_t const& hashs) {
   nodesea::bt::TorrentIdPayload torrent_id{};
 

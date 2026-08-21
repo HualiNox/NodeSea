@@ -1,8 +1,10 @@
 //! Public BitTorrent engine facade.
 
+mod builder;
 mod config;
 mod queue;
 
+pub use builder::EngineBuilder;
 pub use config::*;
 
 use std::{collections::VecDeque, net::SocketAddr};
@@ -19,21 +21,29 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Creates a new BitTorrent engine instance.
+    /// Creates a builder for a BitTorrent engine.
     ///
-    /// # Returns
-    ///
-    /// `Some` when the native engine was created, or `None` if creation failed.
+    /// The builder starts with an empty [`SettingsPack`]. Configure it with
+    /// [`EngineBuilder::set_settings_pack`] before calling
+    /// [`EngineBuilder::build`].
     ///
     /// # Examples
     ///
     /// ```no_run
     /// use nodesea_bt::Engine;
     ///
-    /// let _engine = Engine::new();
+    /// let _engine = Engine::builder().build();
     /// ```
-    pub fn new() -> Option<Self> {
-        ffi::new_engine().map(|inner| Self {
+    pub fn builder() -> EngineBuilder {
+        EngineBuilder::new()
+    }
+
+    /// Creates a new BitTorrent engine instance from the builder.
+    ///
+    /// This constructor is kept inside the engine module. Callers should use
+    /// [`Engine::builder`] to construct an engine.
+    pub(crate) fn new(settings_pack: SettingsPack) -> Option<Self> {
+        ffi::new_engine(settings_pack).map(|inner| Self {
             inner,
             buffer: VecDeque::new(),
         })
@@ -55,7 +65,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::{Engine, EventCollector};
     ///
-    /// let mut engine = Engine::new().unwrap();
+    /// let mut engine = Engine::builder().build().unwrap();
     /// let mut sink = EventCollector::new();
     /// let _ = engine.poll_events(&mut sink);
     /// ```
@@ -83,7 +93,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::Engine;
     ///
-    /// let mut engine = Engine::new().unwrap();
+    /// let mut engine = Engine::builder().build().unwrap();
     /// let _event = engine.poll_event();
     /// ```
     pub fn poll_event(&mut self) -> Option<BtEvent> {
@@ -117,7 +127,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
     ///
-    /// let mut engine = Engine::new().unwrap();
+    /// let mut engine = Engine::builder().build().unwrap();
     /// let torrent_id = TorrentId::new(Some(InfoHashV1::from_bytes([0; 20])), None);
     /// let _ = engine.fetch_metadata(&torrent_id);
     /// ```
@@ -141,7 +151,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::{Engine, InfoHashV1, TorrentId};
     ///
-    /// let mut engine = Engine::new().unwrap();
+    /// let mut engine = Engine::builder().build().unwrap();
     /// let torrent_id = TorrentId::new(Some(InfoHashV1::from_bytes([0; 20])), None);
     /// let _ = engine.cancel_fetch_metadata(&torrent_id);
     /// ```
@@ -163,7 +173,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::Engine;
     ///
-    /// let engine = Engine::new().unwrap();
+    /// let engine = Engine::builder().build().unwrap();
     /// let _ = engine.post_dht_stats();
     /// ```
     pub fn post_dht_stats(&self) -> bool {
@@ -191,7 +201,7 @@ impl Engine {
     /// use std::net::SocketAddr;
     /// use nodesea_bt::{DhtTarget, Engine};
     ///
-    /// let engine = Engine::new().unwrap();
+    /// let engine = Engine::builder().build().unwrap();
     /// let endpoint: SocketAddr = "127.0.0.1:6881".parse().unwrap();
     /// let target = DhtTarget::from_bytes([0; 20]);
     /// let _ = engine.post_dht_sample_infohashes(&endpoint, &target);
@@ -216,7 +226,7 @@ impl Engine {
     /// ```no_run
     /// use nodesea_bt::Engine;
     ///
-    /// let engine = Engine::new().unwrap();
+    /// let engine = Engine::builder().build().unwrap();
     /// let _ = engine.post_dht_live_nodes();
     /// ```
     pub fn post_dht_live_nodes(&self) -> bool {
@@ -235,7 +245,9 @@ mod tests {
 
     #[test]
     fn test_engine_lifecycle() {
-        let mut engine = Engine::new().expect("Failed to initialize Engine");
+        let mut engine = Engine::builder()
+            .build()
+            .expect("Failed to initialize Engine");
 
         assert_eq!(engine.poll_event(), None);
         assert!(engine.post_dht_stats());
@@ -265,7 +277,7 @@ mod tests {
         use std::thread;
         use std::time::{Duration, Instant};
 
-        let mut engine = Engine::new().expect("Engine should initialize");
+        let mut engine = Engine::builder().build().expect("Engine should initialize");
         let mut collector = EventCollector::with_capacity(16);
 
         assert!(engine.post_dht_stats());

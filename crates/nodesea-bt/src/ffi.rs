@@ -6,6 +6,7 @@
 
 #[macro_use]
 mod macros;
+mod config;
 mod dht;
 mod peer;
 mod session;
@@ -14,7 +15,7 @@ mod torrent;
 
 use std::net::SocketAddr;
 
-use crate::{BtEvent, BtEventKind, DhtBootstrap, DhtTarget, EventSink, TorrentId};
+use crate::{BtEvent, BtEventKind, DhtBootstrap, DhtTarget, EventSink, SettingsPack, TorrentId};
 use sink::FfiEventSink;
 
 //===----------------------------------------------------------------------===//
@@ -64,6 +65,7 @@ mod bridge {
     }
 
     unsafe extern "C++" {
+        include!("src/ffi/config.rs.h");
         include!("src/ffi/dht.rs.h");
         include!("src/ffi/session.rs.h");
         include!("src/ffi/torrent.rs.h");
@@ -103,11 +105,12 @@ mod bridge {
         type PeerLogPayload = crate::ffi::peer::PeerLogPayload;
         type PieceFinishedPayload = crate::ffi::peer::PieceFinishedPayload;
         type BlockFinishedPayload = crate::ffi::peer::BlockFinishedPayload;
+        type SettingsPackPayload = crate::ffi::config::SettingsPackPayload;
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Engine;
 
-        fn new_engine() -> UniquePtr<Engine>;
+        fn new_engine(settings_pack: &SettingsPackPayload) -> UniquePtr<Engine>;
         fn poll_events(engine: Pin<&mut Engine>, sink: &mut FfiEventSink) -> usize;
         fn fetch_metadata(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
         fn cancel_fetch(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
@@ -182,8 +185,9 @@ pub(super) struct Engine {
 //===----------------------------------------------------------------------===//
 
 /// Creates a Rust-owned wrapper around the native engine.
-pub(super) fn new_engine() -> Option<Engine> {
-    let inner = bridge::new_engine();
+pub(super) fn new_engine(settings_pack: SettingsPack) -> Option<Engine> {
+    let settings_pack = bridge::SettingsPackPayload::from(settings_pack);
+    let inner = bridge::new_engine(&settings_pack);
     (!inner.is_null()).then_some(Engine { inner })
 }
 
