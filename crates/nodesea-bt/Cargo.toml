@@ -10,17 +10,6 @@ anyhow.workspace = true
 cxx = "1.0.199"
 hex = "0.4.3"
 
-[dev-dependencies]
-criterion = "0.5"
-
-[features]
-bench-internals = []
-
-[[bench]]
-name = "ffi_dispatch"
-harness = false
-required-features = ["bench-internals"]
-
 [build-dependencies]
 cmake = "0.1.58"
 cxx-build = "1.0.199"

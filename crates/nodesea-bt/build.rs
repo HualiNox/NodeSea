@@ -17,9 +17,6 @@ const PRODUCTION_BRIDGE_SOURCES: &[&str] = &[
     "src/ffi/session.rs",
     "src/ffi/torrent.rs",
 ];
-const BENCH_CPP_SOURCE: &str = "benches/support/cpp/bench.cpp";
-const BENCH_INCLUDE_DIR: &str = "benches/support/include";
-const BENCH_HEADER_SOURCE: &str = "benches/support/include/nodesea_bt/bench.hpp";
 
 fn main() {
     // CMake owns libtorrent's feature policy and derives this profile from
@@ -37,32 +34,10 @@ fn main() {
     // Build the C++ bridge against CMake's installed libtorrent and Boost
     // headers, without depending on a system/Homebrew Boost installation.
     cxx_build::CFG.include_prefix = "";
-    let bench_internals = env::var_os("CARGO_FEATURE_BENCH_INTERNALS").is_some();
-    let bridge_sources = if bench_internals {
-        vec![
-            "src/ffi.rs",
-            "src/ffi/dht.rs",
-            "src/ffi/session.rs",
-            "src/ffi/torrent.rs",
-            "benches/support/ffi_bridge.rs",
-        ]
-    } else {
-        vec![
-            "src/ffi.rs",
-            "src/ffi/dht.rs",
-            "src/ffi/session.rs",
-            "src/ffi/torrent.rs",
-        ]
-    };
-    let mut bridge = cxx_build::bridges(bridge_sources);
+    let mut bridge = cxx_build::bridges(PRODUCTION_BRIDGE_SOURCES.iter().copied());
 
-    // Keep production sources explicit. Benchmark code is added only for the
-    // benchmark build, so a normal library build cannot compile it by accident.
     bridge.file("cpp/engine.cpp");
     bridge.file("cpp/helper.cpp");
-    if bench_internals {
-        bridge.file(BENCH_CPP_SOURCE).include(BENCH_INCLUDE_DIR);
-    }
 
     // Include directories
     bridge
@@ -90,7 +65,6 @@ fn main() {
     let compile_commands = workspace_root.join("compile_commands.json");
     let engine_source = Path::new(&manifest_dir).join("cpp/engine.cpp");
     let helper_source = Path::new(&manifest_dir).join("cpp/helper.cpp");
-    let bench_source = Path::new(&manifest_dir).join(BENCH_CPP_SOURCE);
     let installed_include = cmake_include;
     let editor_include = Path::new(&manifest_dir).join(".generated");
     let debug_assert_argument = if debug_native_build {
@@ -117,13 +91,6 @@ fn main() {
         json_string(format!("-I{}", cxxbridge_include.display())),
         debug_assert_argument,
     );
-    let bench_arguments = format!(
-        "{common_arguments}, {}",
-        json_string(format!(
-            "-I{}",
-            Path::new(&manifest_dir).join(BENCH_INCLUDE_DIR).display()
-        )),
-    );
     let engine_command = format!(
         "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
         json_string(&manifest_dir),
@@ -138,16 +105,9 @@ fn main() {
         common_arguments,
         json_string(helper_source.to_string_lossy()),
     );
-    let bench_command = format!(
-        "{{\n  \"directory\": {},\n  \"file\": {},\n  \"arguments\": [\"c++\", \"-std=c++20\", {}, {}]\n}}\n",
-        json_string(&manifest_dir),
-        json_string(bench_source.to_string_lossy()),
-        bench_arguments,
-        json_string(bench_source.to_string_lossy()),
-    );
     fs::write(
         compile_commands,
-        format!("[{engine_command},{helper_command},{bench_command}]"),
+        format!("[{engine_command},{helper_command}]"),
     )
     .unwrap();
 
@@ -159,14 +119,6 @@ fn main() {
         let editor_header = editor_include.join(format!("{source}.h"));
         fs::create_dir_all(editor_header.parent().unwrap()).unwrap();
         fs::copy(generated_header, editor_header).unwrap();
-    }
-
-    if bench_internals {
-        let generated_bench_header = Path::new(&env::var("OUT_DIR").unwrap())
-            .join("cxxbridge/include/benches/support/ffi_bridge.rs.h");
-        let editor_bench_header = editor_include.join("benches/support/ffi_bridge.rs.h");
-        fs::create_dir_all(editor_bench_header.parent().unwrap()).unwrap();
-        fs::copy(generated_bench_header, editor_bench_header).unwrap();
     }
 
     // Link the C++ library and its internal dependencies
@@ -214,10 +166,6 @@ fn main() {
         "cpp/helper.cpp",
         "include/nodesea_bt/engine.hpp",
         "include/nodesea_bt/helper.hpp",
-        // Benchmark-only bridge sources and headers.
-        "benches/support/ffi_bridge.rs",
-        BENCH_CPP_SOURCE,
-        BENCH_HEADER_SOURCE,
     ];
     for path in rerun_paths {
         println!("cargo:rerun-if-changed={path}");
