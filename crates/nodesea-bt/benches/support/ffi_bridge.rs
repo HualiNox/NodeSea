@@ -1,7 +1,7 @@
-use nodesea_bt::{BtEvent, DhtInfoHash, EventSink};
+use crate::{BtEvent, BtEventKind, DhtAnnounce, DhtGetPeers, DhtInfoHash, EventSink};
 
 /// Rust-owned adapter used only by the benchmark bridge.
-pub(super) struct FfiBenchSink {
+pub struct FfiBenchSink {
     /// Erased pointer to the benchmark event sink.
     data: *mut (),
     /// Type-specialized callback used to restore the sink type.
@@ -10,7 +10,7 @@ pub(super) struct FfiBenchSink {
 
 impl FfiBenchSink {
     /// Creates a synchronous benchmark callback adapter.
-    pub(super) fn new<S: EventSink>(sink: &mut S) -> Self {
+    pub fn new<S: EventSink>(sink: &mut S) -> Self {
         Self {
             data: sink as *mut S as *mut (),
             emit_fn: emit::<S>,
@@ -64,18 +64,30 @@ mod bridge {
 
 impl FfiBenchSink {
     fn on_dht_get_peers(&mut self, event: bridge::DhtGetPeersPayload) {
-        self.emit(BtEvent::DhtGetPeers {
-            info_hash: DhtInfoHash::from(event.info_hash),
-        });
+        self.emit(event.into());
     }
 
     fn on_dht_announce(&mut self, event: bridge::DhtAnnouncePayload) {
-        self.emit(BtEvent::DhtAnnounce {
-            info_hash: DhtInfoHash::from(event.info_hash),
-            peer_ip: event.peer_ip,
-            peer_port: event.peer_port,
-        });
+        self.emit(event.into());
     }
 }
 
-pub(super) use bridge::{bench_dht_announce_batch, bench_dht_get_peers_batch};
+impl From<bridge::DhtGetPeersPayload> for BtEvent {
+    fn from(value: bridge::DhtGetPeersPayload) -> Self {
+        Self::new(BtEventKind::DhtGetPeers(DhtGetPeers::from_ffi(
+            DhtInfoHash::from_bytes(value.info_hash),
+        )))
+    }
+}
+
+impl From<bridge::DhtAnnouncePayload> for BtEvent {
+    fn from(value: bridge::DhtAnnouncePayload) -> Self {
+        Self::new(BtEventKind::DhtAnnounce(DhtAnnounce::from_ffi(
+            DhtInfoHash::from_bytes(value.info_hash),
+            value.peer_ip,
+            value.peer_port,
+        )))
+    }
+}
+
+pub use bridge::{bench_dht_announce_batch, bench_dht_get_peers_batch};

@@ -5,6 +5,11 @@ mod engine;
 mod ffi;
 mod types;
 
+#[cfg(feature = "bench-internals")]
+#[path = "../benches/support/ffi_bridge.rs"]
+/// Internal CXX bridge used by the FFI dispatch benchmark.
+pub mod bench;
+
 pub use engine::Engine;
 pub use types::{
     AddTorrent, AddTorrentError, AlertsDropped, BtEvent, BtEventKind, DhtAnnounce, DhtBootstrap,

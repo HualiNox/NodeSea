@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 
-use nodesea_bt::{BtEvent, EventSink};
-
-#[path = "support/ffi_bridge.rs"]
-mod ffi_bridge;
-use ffi_bridge::{FfiBenchSink, bench_dht_announce_batch, bench_dht_get_peers_batch};
+use nodesea_bt::{
+    BtEvent, EventSink,
+    bench::{FfiBenchSink, bench_dht_announce_batch, bench_dht_get_peers_batch},
+};
 
 /// FFI dispatch benchmarks
 const BATCHES: &[usize] = &[1, 64, 1_024, 16_384, 65_536];
