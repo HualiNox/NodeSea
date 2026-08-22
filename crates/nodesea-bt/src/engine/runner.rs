@@ -121,25 +121,19 @@ impl EngineRunner {
         }
     }
 
-    fn poll_events_until_empty(&mut self) -> Result<(), EngineError> {
-        loop {
-            let Some(session) = &mut self.session else {
-                return Err(EngineError::EngineNotRunning);
-            };
+    fn poll_events(&mut self) -> Result<(), EngineError> {
+        let Some(session) = &mut self.session else {
+            return Err(EngineError::EngineNotRunning);
+        };
 
-            let count = ffi::poll_events(session, &mut self.dispatcher);
+        ffi::poll_events(session, &mut self.dispatcher);
 
-            if count == 0 {
-                return Ok(());
-            }
-        }
+        Ok(())
     }
 
     /// Runs the session until shutdown, command-channel closure, or an error.
     pub(crate) async fn run(mut self) -> Result<(), EngineError> {
         self.start_session()?;
-
-        self.poll_events_until_empty()?;
 
         loop {
             tokio::select! {
@@ -151,15 +145,13 @@ impl EngineRunner {
                             }
                         }
                         None => {
-                            self.stop_session();
-
                             return Ok(())
                         },
                     }
                 }
 
                 _ = self.alert_notifier.notified() => {
-                    self.poll_events_until_empty()?;
+                    self.poll_events()?
                 }
             }
         }
