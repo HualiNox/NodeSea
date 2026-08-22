@@ -196,6 +196,13 @@ std::size_t dispatch_alerts(
     // Add torrent alert.
     case lt::add_torrent_alert::alert_type: {
       auto* a = static_cast<lt::add_torrent_alert*>(alert);
+      const bool has_error = a->error.value() != 0;
+
+      if (has_error) {
+        // The asynchronous add may fail after fetch_metadata() recorded the
+        // request. Release that reservation so the caller can retry it.
+        archive_fetches.erase(torrent_id_key(a->params.info_hashes));
+      }
 
       sink.on_add_torrent(AddTorrentPayload{
           .torrent_id = convert_to_torrent_id(a->params.info_hashes),

@@ -142,6 +142,15 @@ bool Session::post_dht_stats() const {
   return true;
 }
 
+bool Session::post_session_stats() const {
+  if (!impl_->session_) {
+    return false;
+  }
+
+  impl_->session_->post_session_stats();
+  return true;
+}
+
 bool Session::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
                                         const std::array<std::uint8_t, 20>& target) const {
   if (!impl_->session_) {
@@ -171,6 +180,10 @@ bool Session::post_dht_live_nodes() const {
   }
 
   lt::session_params state = impl_->session_->session_state(lt::session_handle::save_dht_state);
+
+  if (state.dht_state.nids.empty()) {
+    return false;
+  }
 
   for (auto const& [_, nid] : state.dht_state.nids) {
     impl_->session_->dht_live_nodes(nid);
@@ -212,6 +225,10 @@ bool cancel_fetch(Session& session, const TorrentIdPayload& torrent_id) {
 
 bool post_dht_stats(const Session& session) {
   return session.post_dht_stats();
+}
+
+bool post_session_stats(const Session& session) {
+  return session.post_session_stats();
 }
 
 bool post_dht_sample_infohashes(const Session& session, const UdpEndpointPayload& endpoint,

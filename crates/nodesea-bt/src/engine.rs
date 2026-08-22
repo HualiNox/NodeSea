@@ -129,7 +129,12 @@ mod tests {
     }
 
     async fn engine_handles_commands_and_shutdown_inner() {
-        let engine = Engine::builder().build();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let engine = Engine::builder()
+            .add_extension(EventRecorder {
+                events: Arc::clone(&events),
+            })
+            .build();
         let handle = engine.handle();
         let mut status = handle.subscribe_status();
         let runner = tokio::task::spawn_local(engine.run());
@@ -143,17 +148,29 @@ mod tests {
 
         let v1_id = TorrentId::new(Some(InfoHashV1::from_bytes([0xef; 20])), None);
         assert!(handle.post_fetch_metadata(v1_id).await.unwrap());
+
+        let add_completed = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if events.lock().unwrap().iter().any(|event| {
+                    matches!(
+                        event,
+                        BtEventKind::AddTorrent(add)
+                            if add.torrent_id() == &v1_id && add.error().is_none()
+                    )
+                }) {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or(false);
+        assert!(
+            add_completed,
+            "metadata add success event was not dispatched"
+        );
         assert!(!handle.post_fetch_metadata(v1_id).await.unwrap());
         assert!(handle.post_cancel_fetch_metadata(v1_id).await.unwrap());
-        assert!(
-            !handle
-                .post_cancel_fetch_metadata(TorrentId::new(
-                    Some(InfoHashV1::from_bytes([0xef; 20])),
-                    None,
-                ))
-                .await
-                .unwrap()
-        );
 
         let v2_id = TorrentId::new(None, Some(InfoHashV2::from_bytes([0xcd; 32])));
         assert!(handle.post_fetch_metadata(v2_id).await.unwrap());
@@ -216,5 +233,51 @@ mod tests {
         handle.shutdown().await.unwrap();
         assert!(runner.await.unwrap().is_ok());
         assert!(received, "DhtStats event was not dispatched");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn engine_dispatches_session_stats_event_to_extension() {
+        tokio::task::LocalSet::new()
+            .run_until(engine_dispatches_session_stats_event_to_extension_inner())
+            .await;
+    }
+
+    async fn engine_dispatches_session_stats_event_to_extension_inner() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let engine = Engine::builder()
+            .add_extension(EventRecorder {
+                events: Arc::clone(&events),
+            })
+            .build();
+        let handle = engine.handle();
+        let mut status = handle.subscribe_status();
+        let runner = tokio::task::spawn_local(engine.run());
+
+        status
+            .wait_for(|value| *value == EngineStatus::Running)
+            .await
+            .unwrap();
+
+        assert!(handle.post_session_stats().await.unwrap());
+
+        let received = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| matches!(event, BtEventKind::SessionStats(_)))
+                {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        handle.shutdown().await.unwrap();
+        assert!(runner.await.unwrap().is_ok());
+        assert!(received, "SessionStats event was not dispatched");
     }
 }

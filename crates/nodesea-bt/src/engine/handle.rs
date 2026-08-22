@@ -33,6 +33,11 @@ pub(crate) enum EngineCommand {
         /// Receives whether the request was accepted.
         reply: oneshot::Sender<bool>,
     },
+    /// Requests asynchronous session statistics.
+    PostSessionStats {
+        /// Receives whether the request was accepted.
+        reply: oneshot::Sender<bool>,
+    },
     /// Requests BEP 51 infohash samples from a remote DHT endpoint.
     PostDhtSampleInfohashes {
         /// The remote DHT endpoint to query.
@@ -156,6 +161,14 @@ impl EngineHandle {
             .await
     }
 
+    /// Requests an asynchronous session statistics alert.
+    ///
+    /// The resulting statistics arrive as an engine event.
+    pub async fn post_session_stats(&self) -> Result<bool, EngineError> {
+        self.request(|reply| EngineCommand::PostSessionStats { reply })
+            .await
+    }
+
     /// Requests BEP 51 infohash samples from a remote DHT endpoint.
     ///
     /// The target controls traversal through the remote DHT key space. The
@@ -174,6 +187,10 @@ impl EngineHandle {
     }
 
     /// Requests live-node snapshots from the local DHT routing tables.
+    ///
+    /// Returns `false` when the local session has no active DHT node and no
+    /// snapshot request can be submitted. Results arrive asynchronously as
+    /// engine events.
     pub async fn post_dht_live_nodes(&self) -> Result<bool, EngineError> {
         self.request(|reply| EngineCommand::PostDhtLiveNodes { reply })
             .await

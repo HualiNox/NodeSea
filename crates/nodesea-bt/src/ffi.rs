@@ -120,6 +120,7 @@ mod bridge {
         fn fetch_metadata(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
         fn cancel_fetch(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
         fn post_dht_stats(session: &Session) -> bool;
+        fn post_session_stats(session: &Session) -> bool;
         fn post_dht_sample_infohashes(
             session: &Session,
             endpoint: &UdpEndpointPayload,
@@ -229,6 +230,11 @@ pub(super) fn cancel_fetch(session: &mut Session, torrent_id: &TorrentId) -> boo
 /// Requests an asynchronous DHT statistics alert.
 pub(super) fn post_dht_stats(session: &Session) -> bool {
     bridge::post_dht_stats(&session.inner)
+}
+
+/// Requests an asynchronous session statistics alert.
+pub(super) fn post_session_stats(session: &Session) -> bool {
+    bridge::post_session_stats(&session.inner)
 }
 
 /// Requests an asynchronous DHT sample infohashes alert.

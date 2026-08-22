@@ -79,6 +79,17 @@ impl EngineRunner {
                 Ok(ControlFlow::Continue)
             }
 
+            EngineCommand::PostSessionStats { reply } => {
+                let result = self
+                    .session
+                    .as_ref()
+                    .map(ffi::post_session_stats)
+                    .unwrap_or(false);
+                let _ = reply.send(result);
+
+                Ok(ControlFlow::Continue)
+            }
+
             EngineCommand::PostDhtLiveNodes { reply } => {
                 let result = self
                     .session
