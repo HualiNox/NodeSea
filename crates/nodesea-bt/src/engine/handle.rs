@@ -87,17 +87,20 @@ impl EngineHandle {
             .map_err(|_| EngineError::CommandResponseClosed)
     }
 
-    /// Starts fetching metadata for a torrent identity.
+    /// Posts a request to start fetching metadata for a torrent identity.
     ///
     /// Returns `true` when libtorrent accepts the request and `false` when it
     /// rejects it, for example because an equivalent fetch is already active.
-    pub async fn fetch_metadata(&self, torrent_id: TorrentId) -> Result<bool, EngineError> {
+    pub async fn post_fetch_metadata(&self, torrent_id: TorrentId) -> Result<bool, EngineError> {
         self.request(|reply| EngineCommand::FetchMetadata { torrent_id, reply })
             .await
     }
 
-    /// Cancels an active metadata fetch for a torrent identity.
-    pub async fn cancel_fetch_metadata(&self, torrent_id: TorrentId) -> Result<bool, EngineError> {
+    /// Posts a request to cancel an active metadata fetch for a torrent identity.
+    pub async fn post_cancel_fetch_metadata(
+        &self,
+        torrent_id: TorrentId,
+    ) -> Result<bool, EngineError> {
         self.request(|reply| EngineCommand::CancelFetchMetadata { torrent_id, reply })
             .await
     }

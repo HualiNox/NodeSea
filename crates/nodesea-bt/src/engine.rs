@@ -121,12 +121,12 @@ mod tests {
         assert!(handle.post_dht_stats().await.unwrap());
 
         let v1_id = TorrentId::new(Some(InfoHashV1::from_bytes([0xef; 20])), None);
-        assert!(handle.fetch_metadata(v1_id).await.unwrap());
-        assert!(!handle.fetch_metadata(v1_id).await.unwrap());
-        assert!(handle.cancel_fetch_metadata(v1_id).await.unwrap());
+        assert!(handle.post_fetch_metadata(v1_id).await.unwrap());
+        assert!(!handle.post_fetch_metadata(v1_id).await.unwrap());
+        assert!(handle.post_cancel_fetch_metadata(v1_id).await.unwrap());
         assert!(
             !handle
-                .cancel_fetch_metadata(TorrentId::new(
+                .post_cancel_fetch_metadata(TorrentId::new(
                     Some(InfoHashV1::from_bytes([0xef; 20])),
                     None,
                 ))
@@ -135,17 +135,17 @@ mod tests {
         );
 
         let v2_id = TorrentId::new(None, Some(InfoHashV2::from_bytes([0xcd; 32])));
-        assert!(handle.fetch_metadata(v2_id).await.unwrap());
-        assert!(!handle.fetch_metadata(v2_id).await.unwrap());
-        assert!(handle.cancel_fetch_metadata(v2_id).await.unwrap());
+        assert!(handle.post_fetch_metadata(v2_id).await.unwrap());
+        assert!(!handle.post_fetch_metadata(v2_id).await.unwrap());
+        assert!(handle.post_cancel_fetch_metadata(v2_id).await.unwrap());
 
         let hybrid_id = TorrentId::new(
             Some(InfoHashV1::from_bytes([0xab; 20])),
             Some(InfoHashV2::from_bytes([0xcd; 32])),
         );
-        assert!(handle.fetch_metadata(hybrid_id).await.unwrap());
-        assert!(!handle.fetch_metadata(hybrid_id).await.unwrap());
-        assert!(handle.cancel_fetch_metadata(hybrid_id).await.unwrap());
+        assert!(handle.post_fetch_metadata(hybrid_id).await.unwrap());
+        assert!(!handle.post_fetch_metadata(hybrid_id).await.unwrap());
+        assert!(handle.post_cancel_fetch_metadata(hybrid_id).await.unwrap());
 
         handle.shutdown().await.unwrap();
         assert!(runner.await.unwrap().is_ok());
