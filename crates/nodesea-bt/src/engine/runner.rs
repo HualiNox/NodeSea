@@ -147,62 +147,78 @@ impl EngineRunner {
         Ok(())
     }
 
-    fn send_status(&mut self, status: EngineStatus) -> Result<(), EngineError> {
-        self.status_tx
-            .send(status)
-            .map_err(|e| EngineError::SendStatusError(e.to_string()))
+    fn send_status(&mut self, status: EngineStatus) {
+        let _ = self.status_tx.send(status);
     }
 
     async fn shutdown(&mut self) -> Result<(), EngineError> {
-        self.send_status(EngineStatus::Stopping)?;
+        self.send_status(EngineStatus::Stopping);
 
         self.stop_session();
 
-        self.send_status(EngineStatus::Stopped)?;
+        self.send_status(EngineStatus::Stopped);
 
         Ok(())
     }
 
     /// Runs the session until shutdown, command-channel closure, or an error.
+    ///
+    /// The native session is stopped before returning after a loop error. A
+    /// failure while starting the session publishes [`EngineStatus::Failed`]
+    /// and returns the original startup error.
     pub(crate) async fn run(mut self) -> Result<(), EngineError> {
-        self.send_status(EngineStatus::Starting)?;
+        self.send_status(EngineStatus::Starting);
 
         if let Err(error) = self.start_session() {
-            let _ = self.send_status(EngineStatus::Failed);
+            self.send_status(EngineStatus::Failed);
             return Err(error);
         }
 
-        self.send_status(EngineStatus::Running)?;
+        self.send_status(EngineStatus::Running);
 
-        let shutdown_reply = loop {
-            tokio::select! {
+        // The main loop waits for commands and native alerts. A closed command
+        // channel enters the shutdown sequence. An error also enters the
+        // shutdown sequence before the error is returned.
+        let loop_result = loop {
+            let result = tokio::select! {
                 command = self.command_rx.recv() => {
                     match command {
-                        Some(command) => match self.handle_command(command)? {
-                            ControlFlow::Continue => {}
-                            ControlFlow::Shutdown(reply) => break Some(reply),
-                        },
-                        None => {
-                            // The sender set is gone. Finish through the same
-                            // shutdown path instead of leaving the runner spinning.
-                            break None;
-                        }
+                        Some(command) => self.handle_command(command),
+                        None => break Ok(None),
                     }
                 }
 
                 _ = self.alert_notifier.notified() => {
-                    self.poll_events()?
+                    self.poll_events()
+                        .map(|_| ControlFlow::Continue)
                 }
+            };
+
+            match result {
+                Ok(ControlFlow::Continue) => {}
+                Ok(ControlFlow::Shutdown(reply)) => break Ok(Some(reply)),
+                Err(error) => break Err(error),
             }
         };
 
-        let result = self.shutdown().await;
+        // The loop has exited due to a shutdown command, a closed command
+        // channel, or an error.
+        match loop_result {
+            Ok(shutdown_reply) => {
+                let shutdown_result = self.shutdown().await;
 
-        if let Some(reply) = shutdown_reply {
-            let _ = reply.send(result.clone());
+                if let Some(reply) = shutdown_reply {
+                    let _ = reply.send(shutdown_result.clone());
+                }
+
+                shutdown_result
+            }
+
+            Err(error) => {
+                let _ = self.shutdown().await;
+                Err(error)
+            }
         }
-
-        result
     }
 }
 
