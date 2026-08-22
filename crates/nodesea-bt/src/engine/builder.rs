@@ -1,10 +1,16 @@
 //! Builder API for configuring and creating a BitTorrent engine.
 
-use crate::SettingsPack;
+use tokio::sync::mpsc;
+
+use crate::{
+    EngineConfig, SettingsPack,
+    engine::{Engine, EngineExtension, extension::EngineExtensionBox},
+};
 
 /// Builder for a BitTorrent engine.
 pub struct EngineBuilder {
     settings: SettingsPack,
+    extensions: Vec<EngineExtensionBox>,
 }
 
 impl EngineBuilder {
@@ -12,6 +18,7 @@ impl EngineBuilder {
     pub fn new() -> Self {
         Self {
             settings: SettingsPack::new(),
+            extensions: Vec::new(),
         }
     }
 
@@ -21,9 +28,25 @@ impl EngineBuilder {
         self
     }
 
+    /// Adds an extension to the engine.
+    pub fn add_extension<E>(mut self, extension: E) -> Self
+    where
+        E: EngineExtension + Send + 'static,
+    {
+        self.extensions.push(Box::new(extension));
+        self
+    }
+
     /// Creates the engine with the configured settings.
-    pub fn build(self) -> Result<super::Engine, String> {
-        super::Engine::new(self.settings)
+    pub fn build(self) -> Engine {
+        let (command_tx, command_rx) = mpsc::channel(128);
+
+        Engine::new(
+            EngineConfig::new().with_settings_pack(self.settings),
+            self.extensions,
+            command_tx,
+            command_rx,
+        )
     }
 }
 

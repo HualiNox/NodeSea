@@ -14,19 +14,20 @@ struct FfiEventSink;
 struct UdpEndpointPayload;
 struct TorrentIdPayload;
 struct SettingsPackPayload;
+struct AlertNotifier;
 
-// BitTorrent observation and metadata fetching engine wrapper.
-class Engine {
+// Owns one libtorrent session and exposes the native operations used by Rust.
+class Session {
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 
 public:
-  Engine(SettingsPackPayload const& settings_pack);
-  ~Engine();
+  Session(SettingsPackPayload const& settings_pack);
+  ~Session();
 
-  Engine(const Engine&) = delete;
-  Engine& operator=(const Engine&) = delete;
+  Session(const Session&) = delete;
+  Session& operator=(const Session&) = delete;
 
   // Polls for alerts from the BitTorrent session and dispatches them
   // directly into the Rust EventSink adapter. Returns the number of alerts
@@ -50,27 +51,32 @@ public:
   // Requests snapshots of the live nodes in each local DHT routing table.
   // Results are dispatched asynchronously as DHT live-nodes alerts.
   bool post_dht_live_nodes() const;
+
+  void set_alert_notify(AlertNotifier const& notifier);
+  void clear_alert_notify();
 };
 
 // Creates a new BitTorrent engine instance.
-std::unique_ptr<Engine> new_engine(SettingsPackPayload const& settings_pack);
+std::unique_ptr<Session> start_session(SettingsPackPayload const& settings_pack);
 
 // -----------------------------------------------------------------------------
 // CXX FFI Bridge Functions
 // -----------------------------------------------------------------------------
 
-std::size_t poll_events(Engine& engine, FfiEventSink& sink);
+std::size_t poll_events(Session& session, FfiEventSink& sink);
 
-bool fetch_metadata(Engine& engine, const TorrentIdPayload& torrent_id);
+bool fetch_metadata(Session& session, const TorrentIdPayload& torrent_id);
 
-bool cancel_fetch(Engine& engine, const TorrentIdPayload& torrent_id);
+bool cancel_fetch(Session& session, const TorrentIdPayload& torrent_id);
 
-bool post_dht_stats(const Engine& engine);
+bool post_dht_stats(const Session& session);
 
-bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpointPayload& endpoint,
+bool post_dht_sample_infohashes(const Session& session, const UdpEndpointPayload& endpoint,
                                 const std::array<std::uint8_t, 20>& target);
 
 // Requests live-node snapshots from the local DHT routing tables.
-bool post_dht_live_nodes(const Engine& engine);
+bool post_dht_live_nodes(const Session& session);
 
+void set_alert_notify(Session& session, AlertNotifier const& notifier);
+void clear_alert_notify(Session& session);
 } // namespace nodesea::bt

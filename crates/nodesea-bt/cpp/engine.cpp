@@ -35,18 +35,18 @@
 #include <vector>
 
 // ----------------------------------------------------------------------------
-// Engine Implementation
+// Session Implementation
 // -----------------------------------------------------------------------------
 namespace lt = libtorrent;
 
 namespace nodesea::bt {
 
-struct Engine::Impl {
+struct Session::Impl {
   std::unique_ptr<lt::session> session_;
   std::unordered_map<std::string, lt::torrent_handle> archive_fetches_;
 };
 
-Engine::Engine(SettingsPackPayload const& settings_pack) : impl_(std::make_unique<Impl>()) {
+Session::Session(SettingsPackPayload const& settings_pack) : impl_(std::make_unique<Impl>()) {
   lt::settings_pack sp;
 
   // Apply settings from the provided SettingsPackPayload.
@@ -72,13 +72,13 @@ Engine::Engine(SettingsPackPayload const& settings_pack) : impl_(std::make_uniqu
   impl_->session_ = std::make_unique<lt::session>(std::move(sp));
 }
 
-Engine::~Engine() = default;
+Session::~Session() = default;
 
-std::unique_ptr<Engine> new_engine(SettingsPackPayload const& settings_pack) {
-  return std::make_unique<Engine>(settings_pack);
+std::unique_ptr<Session> start_session(SettingsPackPayload const& settings_pack) {
+  return std::make_unique<Session>(settings_pack);
 }
 
-std::size_t Engine::poll_events(FfiEventSink& sink) {
+std::size_t Session::poll_events(FfiEventSink& sink) {
   if (!impl_->session_) {
     return 0;
   }
@@ -88,7 +88,7 @@ std::size_t Engine::poll_events(FfiEventSink& sink) {
   return dispatch_alerts(alerts, sink, *impl_->session_, impl_->archive_fetches_);
 }
 
-bool Engine::fetch_metadata(const TorrentIdPayload& torrent_id) {
+bool Session::fetch_metadata(const TorrentIdPayload& torrent_id) {
   if (!impl_->session_) {
     return false;
   }
@@ -117,7 +117,7 @@ bool Engine::fetch_metadata(const TorrentIdPayload& torrent_id) {
   return true;
 }
 
-bool Engine::cancel_fetch(const TorrentIdPayload& torrent_id) {
+bool Session::cancel_fetch(const TorrentIdPayload& torrent_id) {
   if (!impl_->session_) {
     return false;
   }
@@ -133,7 +133,7 @@ bool Engine::cancel_fetch(const TorrentIdPayload& torrent_id) {
   return true;
 }
 
-bool Engine::post_dht_stats() const {
+bool Session::post_dht_stats() const {
   if (!impl_->session_) {
     return false;
   }
@@ -142,7 +142,7 @@ bool Engine::post_dht_stats() const {
   return true;
 }
 
-bool Engine::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
+bool Session::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
                                         const std::array<std::uint8_t, 20>& target) const {
   if (!impl_->session_) {
     return false;
@@ -165,7 +165,7 @@ bool Engine::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
   return true;
 }
 
-bool Engine::post_dht_live_nodes() const {
+bool Session::post_dht_live_nodes() const {
   if (!impl_->session_) {
     return false;
   }
@@ -178,33 +178,56 @@ bool Engine::post_dht_live_nodes() const {
 
   return true;
 }
+
+void Session::set_alert_notify(AlertNotifier const& notifier) {
+  if (!impl_->session_) {
+    return;
+  }
+  impl_->session_->set_alert_notify([&notifier]() { notifier.notify(); });
+}
+
+void Session::clear_alert_notify() {
+  if (!impl_->session_) {
+    return;
+  }
+
+  impl_->session_->set_alert_notify({});
+}
+
 // -----------------------------------------------------------------------------
 // CXX FFI Bridge Functions
 // -----------------------------------------------------------------------------
 
-std::size_t poll_events(Engine& engine, FfiEventSink& sink) {
-  return engine.poll_events(sink);
+std::size_t poll_events(Session& session, FfiEventSink& sink) {
+  return session.poll_events(sink);
 }
 
-bool fetch_metadata(Engine& engine, const TorrentIdPayload& torrent_id) {
-  return engine.fetch_metadata(torrent_id);
+bool fetch_metadata(Session& session, const TorrentIdPayload& torrent_id) {
+  return session.fetch_metadata(torrent_id);
 }
 
-bool cancel_fetch(Engine& engine, const TorrentIdPayload& torrent_id) {
-  return engine.cancel_fetch(torrent_id);
+bool cancel_fetch(Session& session, const TorrentIdPayload& torrent_id) {
+  return session.cancel_fetch(torrent_id);
 }
 
-bool post_dht_stats(const Engine& engine) {
-  return engine.post_dht_stats();
+bool post_dht_stats(const Session& session) {
+  return session.post_dht_stats();
 }
 
-bool post_dht_sample_infohashes(const Engine& engine, const UdpEndpointPayload& endpoint,
+bool post_dht_sample_infohashes(const Session& session, const UdpEndpointPayload& endpoint,
                                 const std::array<std::uint8_t, 20>& target) {
-  return engine.post_dht_sample_infohashes(endpoint, target);
+  return session.post_dht_sample_infohashes(endpoint, target);
 }
 
-bool post_dht_live_nodes(const Engine& engine) {
-  return engine.post_dht_live_nodes();
+bool post_dht_live_nodes(const Session& session) {
+  return session.post_dht_live_nodes();
 }
 
+void set_alert_notify(Session& session, AlertNotifier const& notifier) {
+  session.set_alert_notify(notifier);
+}
+
+void clear_alert_notify(Session& session) {
+  session.clear_alert_notify();
+}
 } // namespace nodesea::bt

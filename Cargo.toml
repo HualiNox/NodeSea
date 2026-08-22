@@ -3,23 +3,18 @@ name = "nodesea"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
-authors = [
-    "HualiNox",
-]
+authors = ["HualiNox"]
 
 [workspace]
 resolver = "2"
-members = [
-    "crates/nodesea-bt"
-]
+members = ["crates/nodesea-bt"]
 
 [workspace.package]
 version = "0.0.1"
-authors = [
-    "HualiNox",
-]
+authors = ["HualiNox"]
 license = "MIT"
 edition = "2024"
 
 [workspace.dependencies]
 anyhow = "1"
+tokio = { version = "1.53.1", features = ["full"] }

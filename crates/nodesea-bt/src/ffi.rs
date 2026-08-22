@@ -8,6 +8,7 @@
 mod macros;
 mod config;
 mod dht;
+mod notifier;
 mod peer;
 mod session;
 mod sink;
@@ -18,11 +19,13 @@ use std::net::SocketAddr;
 use crate::{BtEvent, BtEventKind, DhtBootstrap, DhtTarget, EventSink, SettingsPack, TorrentId};
 use sink::FfiEventSink;
 
+pub(crate) use notifier::AlertNotifier;
+
 //===----------------------------------------------------------------------===//
-// Canonical Engine and callback bridge
+// Canonical native Session and callback bridge
 //===----------------------------------------------------------------------===//
 
-/// The canonical bridge owns the native Engine binding and the one C++ sink
+/// The canonical bridge owns the native Session binding and the one C++ sink
 /// type. Domain-specific wire payloads are owned by the private child bridges.
 #[cxx::bridge(namespace = "nodesea::bt")]
 mod bridge {
@@ -108,19 +111,30 @@ mod bridge {
         type SettingsPackPayload = crate::ffi::config::SettingsPackPayload;
 
         /// Opaque native engine owned by the Rust facade wrapper.
-        type Engine;
+        type Session;
 
-        fn new_engine(settings_pack: &SettingsPackPayload) -> Result<UniquePtr<Engine>>;
-        fn poll_events(engine: Pin<&mut Engine>, sink: &mut FfiEventSink) -> usize;
-        fn fetch_metadata(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
-        fn cancel_fetch(engine: Pin<&mut Engine>, torrent_id: &TorrentIdPayload) -> bool;
-        fn post_dht_stats(engine: &Engine) -> bool;
+        fn start_session(settings_pack: &SettingsPackPayload) -> Result<UniquePtr<Session>>;
+        fn poll_events(session: Pin<&mut Session>, sink: &mut FfiEventSink) -> usize;
+        fn fetch_metadata(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
+        fn cancel_fetch(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
+        fn post_dht_stats(session: &Session) -> bool;
         fn post_dht_sample_infohashes(
-            engine: &Engine,
+            session: &Session,
             endpoint: &UdpEndpointPayload,
             target: &[u8; 20],
         ) -> bool;
-        fn post_dht_live_nodes(engine: &Engine) -> bool;
+        fn post_dht_live_nodes(session: &Session) -> bool;
+    }
+
+    extern "Rust" {
+        type AlertNotifier;
+
+        fn notify(self: &AlertNotifier);
+    }
+
+    unsafe extern "C++" {
+        fn set_alert_notify(session: Pin<&mut Session>, notifier: &AlertNotifier);
+        fn clear_alert_notify(session: Pin<&mut Session>);
     }
 }
 
@@ -174,10 +188,10 @@ impl FfiEventSink {
 // Rust-owned native wrapper
 //===----------------------------------------------------------------------===//
 
-/// Rust-owned wrapper around the private generated CXX Engine binding.
-pub(super) struct Engine {
+/// Rust-owned wrapper around the private generated CXX Session binding.
+pub(super) struct Session {
     /// Opaque native engine allocation owned by this Rust wrapper.
-    inner: cxx::UniquePtr<bridge::Engine>,
+    inner: cxx::UniquePtr<bridge::Session>,
 }
 
 //===----------------------------------------------------------------------===//
@@ -185,50 +199,58 @@ pub(super) struct Engine {
 //===----------------------------------------------------------------------===//
 
 /// Creates a Rust-owned wrapper around the native engine.
-pub(super) fn new_engine(settings_pack: SettingsPack) -> Result<Engine, String> {
+pub(super) fn start_session(settings_pack: SettingsPack) -> Result<Session, String> {
     let settings_pack = bridge::SettingsPackPayload::from(settings_pack);
-    bridge::new_engine(&settings_pack)
-        .map(|inner| Engine { inner })
+    bridge::start_session(&settings_pack)
+        .map(|inner| Session { inner })
         .map_err(|error| error.what().to_owned())
 }
 
 /// Polls native alerts and dispatches them to the supplied domain sink.
-pub(super) fn poll_events<S: EventSink>(engine: &mut Engine, sink: &mut S) -> usize {
+pub(super) fn poll_events<S: EventSink>(session: &mut Session, sink: &mut S) -> usize {
     let mut ffi_sink = FfiEventSink::new(sink);
-    bridge::poll_events(engine.inner.pin_mut(), &mut ffi_sink)
+    bridge::poll_events(session.inner.pin_mut(), &mut ffi_sink)
 }
 
 /// Starts metadata fetching for a torrent identity.
-pub(super) fn fetch_metadata(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
+pub(super) fn fetch_metadata(session: &mut Session, torrent_id: &TorrentId) -> bool {
     let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
-    bridge::fetch_metadata(engine.inner.pin_mut(), &payload)
+    bridge::fetch_metadata(session.inner.pin_mut(), &payload)
 }
 
 /// Cancels metadata fetching for a torrent identity.
-pub(super) fn cancel_fetch(engine: &mut Engine, torrent_id: &TorrentId) -> bool {
+pub(super) fn cancel_fetch(session: &mut Session, torrent_id: &TorrentId) -> bool {
     let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
-    bridge::cancel_fetch(engine.inner.pin_mut(), &payload)
+    bridge::cancel_fetch(session.inner.pin_mut(), &payload)
 }
 
 /// Requests an asynchronous DHT statistics alert.
-pub(super) fn post_dht_stats(engine: &Engine) -> bool {
-    bridge::post_dht_stats(&engine.inner)
+pub(super) fn post_dht_stats(session: &Session) -> bool {
+    bridge::post_dht_stats(&session.inner)
 }
 
 /// Requests an asynchronous DHT sample infohashes alert.
 pub(super) fn post_dht_sample_infohashes(
-    engine: &Engine,
+    session: &Session,
     endpoint: &SocketAddr,
     target: &DhtTarget,
 ) -> bool {
     bridge::post_dht_sample_infohashes(
-        &engine.inner,
+        &session.inner,
         &bridge::UdpEndpointPayload::from_socket_addr(endpoint),
         target.as_bytes(),
     )
 }
 
 /// Requests live nodes from each local DHT routing table.
-pub(super) fn post_dht_live_nodes(engine: &Engine) -> bool {
-    bridge::post_dht_live_nodes(&engine.inner)
+pub(super) fn post_dht_live_nodes(session: &Session) -> bool {
+    bridge::post_dht_live_nodes(&session.inner)
+}
+
+pub(super) fn set_alert_notify(session: &mut Session, notifier: &notifier::AlertNotifier) {
+    bridge::set_alert_notify(session.inner.pin_mut(), notifier);
+}
+
+pub(super) fn clear_alert_notify(session: &mut Session) {
+    bridge::clear_alert_notify(session.inner.pin_mut());
 }
