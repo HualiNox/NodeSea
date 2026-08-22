@@ -16,7 +16,9 @@ pub(crate) struct EngineRunner {
     session: Option<ffi::Session>,
     dispatcher: EventDispatcher,
     command_rx: CommandReceiver,
-    alert_notifier: ffi::AlertNotifier,
+
+    // Keeps the notifier address stable while the native callback is registered.
+    alert_notifier: Box<ffi::AlertNotifier>,
 }
 
 impl EngineRunner {
@@ -31,14 +33,14 @@ impl EngineRunner {
             settings_pack,
             session: None,
             command_rx,
-            alert_notifier: ffi::AlertNotifier::new(),
+            alert_notifier: Box::new(ffi::AlertNotifier::new()),
         }
     }
 
     fn start_session(&mut self) -> Result<(), EngineError> {
         let mut session = ffi::start_session(self.settings_pack.clone())
             .map_err(EngineError::SessionStartError)?;
-        ffi::set_alert_notify(&mut session, &self.alert_notifier);
+        ffi::set_alert_notify(&mut session, self.alert_notifier.as_ref());
         self.session = Some(session);
         Ok(())
     }
