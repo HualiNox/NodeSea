@@ -207,7 +207,7 @@ std::size_t dispatch_alerts(
       sink.on_add_torrent(AddTorrentPayload{
           .torrent_id = convert_to_torrent_id(a->params.info_hashes),
           .message = rust::String(a->message()),
-          .has_error = a->error != lt::errors::no_error,
+          .has_error = has_error,
           .error_value = static_cast<std::int32_t>(a->error.value()),
           .error_category = rust::String(a->error.category().name()),
       });
