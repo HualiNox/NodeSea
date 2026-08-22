@@ -12,7 +12,9 @@ pub use builder::EngineBuilder;
 pub use config::*;
 pub use errors::EngineError;
 pub use extension::EngineExtension;
-pub use handle::EngineHandle;
+pub use handle::{EngineHandle, StatusReceiver};
+pub use runner::EngineStatus;
+use tokio::sync::watch;
 
 use crate::engine::{
     dispatcher::EventDispatcher,
@@ -26,8 +28,13 @@ pub struct Engine {
     config: EngineConfig,
     extensions: Vec<EngineExtensionBox>,
 
+    // Sender used by handles to submit commands to the engine runner.
     command_tx: CommandSender,
     command_rx: CommandReceiver,
+
+    // Keeps the engine status updated for external observers.
+    status_tx: watch::Sender<EngineStatus>,
+    status_rx: watch::Receiver<EngineStatus>,
 }
 
 impl Engine {
@@ -53,33 +60,41 @@ impl Engine {
         extensions: Vec<EngineExtensionBox>,
         command_tx: CommandSender,
         command_rx: CommandReceiver,
+        status_tx: watch::Sender<EngineStatus>,
+        status_rx: watch::Receiver<EngineStatus>,
     ) -> Self {
         Self {
             config,
             extensions,
             command_rx,
             command_tx,
+            status_tx,
+            status_rx,
         }
     }
 
-    /// Returns a cloneable handle for sending commands to the running engine.
+    /// Returns a cloneable handle for sending commands and observing the
+    /// running engine.
     ///
     /// The handle does not own the native session. Commands are executed by
     /// the task running [`Engine::run`].
     pub fn handle(&self) -> EngineHandle {
-        EngineHandle::new(self.command_tx.clone())
+        EngineHandle::new(self.command_tx.clone(), self.status_rx.clone())
     }
 
     /// Starts the native session and runs the engine event loop.
     ///
     /// The session is created lazily here so that alert notification is
     /// installed before the engine begins consuming alerts. The future ends
-    /// after shutdown, command-channel closure, or an engine error.
+    /// after orderly shutdown or an engine error. If the command channel is
+    /// closed, the runner follows the same shutdown path as an explicit
+    /// shutdown request.
     pub async fn run(self) -> Result<(), EngineError> {
         let runner = EngineRunner::new(
             self.config.settings_pack(),
             EventDispatcher::new(self.extensions),
             self.command_rx,
+            self.status_tx,
         );
 
         runner.run().await
@@ -116,7 +131,13 @@ mod tests {
     async fn engine_handles_commands_and_shutdown_inner() {
         let engine = Engine::builder().build();
         let handle = engine.handle();
+        let mut status = handle.subscribe_status();
         let runner = tokio::task::spawn_local(engine.run());
+
+        status
+            .wait_for(|value| *value == EngineStatus::Running)
+            .await
+            .unwrap();
 
         assert!(handle.post_dht_stats().await.unwrap());
 
@@ -166,7 +187,13 @@ mod tests {
             })
             .build();
         let handle = engine.handle();
+        let mut status = handle.subscribe_status();
         let runner = tokio::task::spawn_local(engine.run());
+
+        status
+            .wait_for(|value| *value == EngineStatus::Running)
+            .await
+            .unwrap();
 
         assert!(handle.post_dht_stats().await.unwrap());
 

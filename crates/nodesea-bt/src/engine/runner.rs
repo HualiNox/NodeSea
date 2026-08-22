@@ -5,10 +5,27 @@ use crate::{
     engine::{
         dispatcher::EventDispatcher,
         errors::EngineError,
-        handle::{CommandReceiver, EngineCommand},
+        handle::{CommandReceiver, ControlFlow, EngineCommand, StatusSender},
     },
     ffi,
 };
+
+/// Lifecycle state reported by the engine runner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineStatus {
+    /// The engine has been built but has not started running.
+    Idle,
+    /// The native session is being created.
+    Starting,
+    /// The native session is running and accepts commands.
+    Running,
+    /// Shutdown is in progress and no new commands are processed.
+    Stopping,
+    /// The native session and runner have completed shutdown.
+    Stopped,
+    /// The engine failed while starting and cannot accept commands.
+    Failed,
+}
 
 /// Owns the native session and serializes commands with alert consumption.
 pub(crate) struct EngineRunner {
@@ -16,6 +33,8 @@ pub(crate) struct EngineRunner {
     session: Option<ffi::Session>,
     dispatcher: EventDispatcher,
     command_rx: CommandReceiver,
+
+    status_tx: StatusSender,
 
     // Keeps the notifier address stable while the native callback is registered.
     alert_notifier: Box<ffi::AlertNotifier>,
@@ -27,12 +46,14 @@ impl EngineRunner {
         settings_pack: SettingsPack,
         dispatcher: EventDispatcher,
         command_rx: CommandReceiver,
+        status_tx: StatusSender,
     ) -> Self {
         Self {
             dispatcher,
             settings_pack,
             session: None,
             command_rx,
+            status_tx,
             alert_notifier: Box::new(ffi::AlertNotifier::new()),
         }
     }
@@ -45,7 +66,7 @@ impl EngineRunner {
         Ok(())
     }
 
-    fn handle_command(&mut self, command: EngineCommand) -> Result<bool, EngineError> {
+    fn handle_command(&mut self, command: EngineCommand) -> Result<ControlFlow, EngineError> {
         match command {
             EngineCommand::PostDhtStats { reply } => {
                 let result = self
@@ -55,7 +76,7 @@ impl EngineRunner {
                     .unwrap_or(false);
                 let _ = reply.send(result);
 
-                Ok(false)
+                Ok(ControlFlow::Continue)
             }
 
             EngineCommand::PostDhtLiveNodes { reply } => {
@@ -66,7 +87,7 @@ impl EngineRunner {
                     .unwrap_or(false);
                 let _ = reply.send(result);
 
-                Ok(false)
+                Ok(ControlFlow::Continue)
             }
 
             EngineCommand::FetchMetadata { torrent_id, reply } => {
@@ -77,7 +98,7 @@ impl EngineRunner {
                     .unwrap_or(false);
                 let _ = reply.send(result);
 
-                Ok(false)
+                Ok(ControlFlow::Continue)
             }
 
             EngineCommand::CancelFetchMetadata { torrent_id, reply } => {
@@ -88,7 +109,7 @@ impl EngineRunner {
                     .unwrap_or(false);
                 let _ = reply.send(result);
 
-                Ok(false)
+                Ok(ControlFlow::Continue)
             }
 
             EngineCommand::PostDhtSampleInfohashes {
@@ -103,15 +124,10 @@ impl EngineRunner {
                     .unwrap_or(false);
                 let _ = reply.send(result);
 
-                Ok(false)
+                Ok(ControlFlow::Continue)
             }
 
-            EngineCommand::Shutdown { reply } => {
-                self.stop_session();
-                let _ = reply.send(());
-
-                Ok(true)
-            }
+            EngineCommand::Shutdown { reply } => Ok(ControlFlow::Shutdown(reply)),
         }
     }
 
@@ -131,22 +147,46 @@ impl EngineRunner {
         Ok(())
     }
 
+    fn send_status(&mut self, status: EngineStatus) -> Result<(), EngineError> {
+        self.status_tx
+            .send(status)
+            .map_err(|e| EngineError::SendStatusError(e.to_string()))
+    }
+
+    async fn shutdown(&mut self) -> Result<(), EngineError> {
+        self.send_status(EngineStatus::Stopping)?;
+
+        self.stop_session();
+
+        self.send_status(EngineStatus::Stopped)?;
+
+        Ok(())
+    }
+
     /// Runs the session until shutdown, command-channel closure, or an error.
     pub(crate) async fn run(mut self) -> Result<(), EngineError> {
-        self.start_session()?;
+        self.send_status(EngineStatus::Starting)?;
 
-        loop {
+        if let Err(error) = self.start_session() {
+            let _ = self.send_status(EngineStatus::Failed);
+            return Err(error);
+        }
+
+        self.send_status(EngineStatus::Running)?;
+
+        let shutdown_reply = loop {
             tokio::select! {
                 command = self.command_rx.recv() => {
                     match command {
-                        Some(command) => {
-                            if self.handle_command(command)? {
-                                return Ok(());
-                            }
-                        }
-                        None => {
-                            return Ok(())
+                        Some(command) => match self.handle_command(command)? {
+                            ControlFlow::Continue => {}
+                            ControlFlow::Shutdown(reply) => break Some(reply),
                         },
+                        None => {
+                            // The sender set is gone. Finish through the same
+                            // shutdown path instead of leaving the runner spinning.
+                            break None;
+                        }
                     }
                 }
 
@@ -154,12 +194,44 @@ impl EngineRunner {
                     self.poll_events()?
                 }
             }
+        };
+
+        let result = self.shutdown().await;
+
+        if let Some(reply) = shutdown_reply {
+            let _ = reply.send(result.clone());
         }
+
+        result
     }
 }
 
 impl Drop for EngineRunner {
     fn drop(&mut self) {
         self.stop_session();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::{mpsc, watch};
+
+    use super::*;
+    use crate::{SettingsPack, engine::dispatcher::EventDispatcher};
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn closed_command_channel_runs_shutdown_fallback() {
+        let (command_tx, command_rx) = mpsc::channel(1);
+        drop(command_tx);
+        let (status_tx, status_rx) = watch::channel(EngineStatus::Idle);
+        let runner = EngineRunner::new(
+            SettingsPack::new(),
+            EventDispatcher::new(Vec::new()),
+            command_rx,
+            status_tx,
+        );
+
+        assert_eq!(runner.run().await, Ok(()));
+        assert_eq!(*status_rx.borrow(), EngineStatus::Stopped);
     }
 }

@@ -18,4 +18,9 @@ pub enum EngineError {
     /// The runner stopped before replying to a command.
     #[error("Engine command response channel is closed")]
     CommandResponseClosed,
+
+    /// An engine status update could not be delivered because its receivers
+    /// were dropped.
+    #[error("Failed to send engine status update: {0}")]
+    SendStatusError(String),
 }
