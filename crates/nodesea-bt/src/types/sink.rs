@@ -1,9 +1,9 @@
-//! Public event sink traits and in-memory event collection.
+//! Internal event sink trait used by the FFI adapter and dispatcher.
 
 use super::event::BtEvent;
 
-/// Receives events produced by the BitTorrent engine.
-pub trait EventSink {
+/// Receives events produced by the BitTorrent engine internally.
+pub(crate) trait EventSink {
     /// Handles one event synchronously.
     ///
     /// The event is owned by the sink after this call returns. Implementations
@@ -18,15 +18,5 @@ pub trait EventSink {
     ///
     /// - `()` - Nothing; the sink handles the event synchronously.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// use nodesea_bt::{BtEvent, EventSink};
-    ///
-    /// struct Sink;
-    /// impl EventSink for Sink {
-    ///     fn on_event(&mut self, _event: BtEvent) {}
-    /// }
-    /// ```
     fn on_event(&mut self, event: BtEvent);
 }

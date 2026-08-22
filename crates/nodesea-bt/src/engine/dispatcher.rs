@@ -1,6 +1,6 @@
 //! Synchronous event fan-out for engine extensions.
 
-use crate::{EventSink, engine::extension::EngineExtensionBox};
+use crate::{engine::extension::EngineExtensionBox, types::EventSink};
 
 /// Dispatches each event to the configured engine extensions in registration
 /// order.

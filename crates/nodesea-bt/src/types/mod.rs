@@ -8,4 +8,5 @@ mod sink;
 pub use event::*;
 pub use identity::*;
 pub use node::*;
-pub use sink::*;
+
+pub(crate) use sink::EventSink;

@@ -1,6 +1,6 @@
 //! Rust-owned synchronous adapter used by the private CXX callback bridge.
 
-use crate::{BtEvent, EventSink};
+use crate::{BtEvent, types::EventSink};
 
 /// Rust-owned adapter passed to C++ for synchronous alert dispatch.
 pub(super) struct FfiEventSink {

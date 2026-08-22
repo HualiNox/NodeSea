@@ -16,10 +16,12 @@ mod torrent;
 
 use std::net::SocketAddr;
 
-use crate::{BtEvent, BtEventKind, DhtBootstrap, DhtTarget, EventSink, SettingsPack, TorrentId};
+use crate::{
+    BtEvent, BtEventKind, DhtBootstrap, DhtTarget, SettingsPack, TorrentId, types::EventSink,
+};
 use sink::FfiEventSink;
 
-pub(crate) use notifier::AlertNotifier;
+pub(super) use notifier::AlertNotifier;
 
 //===----------------------------------------------------------------------===//
 // Canonical native Session and callback bridge
