@@ -80,7 +80,7 @@ mod bridge {
         /// Minimum interval before querying this node again, in seconds.
         interval_secs: i64,
         /// Number of infohashes currently stored by the remote node.
-        num_infohashes: i32,
+        num_infohashes: i64,
         /// Sampled infohashes represented through the CXX fixed-array adapter.
         samples: Vec<SampleInfoHashPayload>,
         /// Additional DHT nodes returned for key-space traversal.
@@ -185,7 +185,7 @@ impl From<bridge::DhtSampleInfohashesPayload> for BtEvent {
             DhtSampleInfohashes::from_ffi(
                 value.node.into_dht_node(),
                 Duration::from_secs(value.interval_secs as u64),
-                value.num_infohashes as u32,
+                value.num_infohashes,
                 value
                     .samples
                     .into_iter()

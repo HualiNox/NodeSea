@@ -288,7 +288,7 @@ std::size_t dispatch_alerts(
                       },
               },
           .interval_secs = lt::total_seconds(a->interval),
-          .num_infohashes = static_cast<std::int32_t>(a->num_infohashes),
+          .num_infohashes = static_cast<std::int64_t>(a->num_infohashes),
           .samples = std::move(samples),
           .nodes = std::move(nodes),
       });

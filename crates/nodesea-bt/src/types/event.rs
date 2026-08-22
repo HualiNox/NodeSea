@@ -166,7 +166,7 @@ event_payload!(
 event_payload!("DHT sample infohashes event payload.", DhtSampleInfohashes {
     node: DhtNode,
     interval: Duration,
-    num_infohashes: u32,
+    num_infohashes: i64,
     samples: Vec<DhtInfoHash>,
     nodes: Vec<DhtNode>,
 });
