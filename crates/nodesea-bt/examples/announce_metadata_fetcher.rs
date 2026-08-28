@@ -139,7 +139,7 @@ async fn run() {
     );
 
     // The native runner owns the session; this loop executes commands emitted
-    // by the synchronous event adapter.
+    // by the extension on the dedicated event worker.
     let mut sampled_peers = HashSet::new();
     // Keep the example observable even when no new announce arrives.
     let mut interval = tokio::time::interval(Duration::from_secs(10));
