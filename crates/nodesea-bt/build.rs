@@ -41,8 +41,8 @@ fn main() {
     let cxxbridge_include = out_dir.join("cxxbridge/include");
     let project_include = Path::new("include");
 
-    // Build the C++ bridge against CMake's installed libtorrent and Boost
-    // headers, without depending on a system/Homebrew Boost installation.
+    // Build the C++ bridge against the same libtorrent and Boost headers that
+    // CMake selected for this build environment.
     cxx_build::CFG.include_prefix = "";
     let mut bridge = cxx_build::bridges(PRODUCTION_BRIDGE_SOURCES.iter().copied());
 
@@ -150,11 +150,17 @@ fn main() {
         fs::copy(generated_header, editor_header).unwrap();
     }
 
-    // Link the C++ library and its internal dependencies
-    println!(
-        "cargo:rustc-link-search=native={}",
-        dst.join("lib").display()
-    );
+    // GNUInstallDirs may select lib64 on 64-bit Linux, while macOS and other
+    // environments commonly install into lib.
+    for directory in ["lib", "lib64"] {
+        let native_library_dir = dst.join(directory);
+        if native_library_dir.is_dir() {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                native_library_dir.display()
+            );
+        }
+    }
 
     println!("cargo:rustc-link-lib=static=torrent-rasterbar");
 
@@ -186,6 +192,8 @@ fn main() {
     }
 
     let rerun_paths = [
+        // Native dependency configuration.
+        "CMakeLists.txt",
         // Rust FFI implementation trees.
         "src/ffi.rs",
         "src/ffi",

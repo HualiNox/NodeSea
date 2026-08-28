@@ -26,33 +26,46 @@ set(exceptions ON CACHE BOOL "" FORCE)
 set(webtorrent OFF CACHE BOOL "" FORCE)
 set(i2p OFF CACHE BOOL "" FORCE)
 
-# boost - don't have source
-set(BOOST_VERSION 1.92.0)
-set(BOOST_RELEASE_BASE "https://github.com/boostorg/boost/releases/download")
-set(BOOST_ARCHIVE "boost-${BOOST_VERSION}-cmake.tar.xz")
-string(
-    CONCAT BOOST_URL
-    "${BOOST_RELEASE_BASE}"
-    "/boost-${BOOST_VERSION}"
-    "/${BOOST_ARCHIVE}"
-)
+set(NODESEA_USE_SYSTEM_BOOST "$ENV{NODESEA_USE_SYSTEM_BOOST}")
 
-FetchContent_Declare(
-    boost_src
-    URL "${BOOST_URL}"
-)
+# NixOS's development shell provides a compatible system Boost. Other build
+# environments keep the source-based dependency until they are tested.
+if(NODESEA_USE_SYSTEM_BOOST STREQUAL "1")
+    # A build directory may retain paths from the FetchContent branch. Clear
+    # them before resolving the Boost package supplied by the Nix shell.
+    unset(BOOST_ROOT CACHE)
+    unset(Boost_ROOT CACHE)
+    unset(Boost_INCLUDE_DIR CACHE)
+    unset(Boost_DIR CACHE)
+    unset(boost_headers_DIR CACHE)
 
-set(BOOST_ENABLE_COMPATIBILITY_TARGETS ON CACHE BOOL "" FORCE)
-set(BOOST_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+    find_package(Boost CONFIG REQUIRED)
+    get_target_property(
+        NODESEA_BOOST_INCLUDE_DIR
+        Boost::headers
+        INTERFACE_INCLUDE_DIRECTORIES
+    )
+else()
+    set(BOOST_VERSION 1.92.0)
+    set(BOOST_RELEASE_BASE "https://github.com/boostorg/boost/releases/download")
+    set(BOOST_ARCHIVE "boost-${BOOST_VERSION}-cmake.tar.xz")
+    string(
+        CONCAT BOOST_URL
+        "${BOOST_RELEASE_BASE}"
+        "/boost-${BOOST_VERSION}"
+        "/${BOOST_ARCHIVE}"
+    )
 
-FetchContent_MakeAvailable(boost_src)
+    FetchContent_Declare(
+        boost_src
+        URL "${BOOST_URL}"
+    )
 
-# Help libtorrent's FindBoost locate the headers fetched above instead of
-# relying on host-specific search paths such as /usr/include.
-set(BOOST_ROOT "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
-set(Boost_ROOT "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
-set(Boost_INCLUDE_DIR "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
-set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "" FORCE)
+    set(BOOST_ENABLE_COMPATIBILITY_TARGETS ON CACHE BOOL "" FORCE)
+    set(BOOST_SKIP_INSTALL_RULES OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(boost_src)
+    set(NODESEA_BOOST_INCLUDE_DIR "${boost_src_SOURCE_DIR}")
+endif()
 
 # libtorrent
 FetchContent_Declare(
@@ -64,26 +77,29 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(libtorrent)
 
-# Install boost headers
-if(EXISTS "${boost_src_SOURCE_DIR}/boost")
+# Install Boost headers into Cargo's prefix so the follow-up cxx_build
+# invocation can use the same include tree as libtorrent.
+if(EXISTS "${NODESEA_BOOST_INCLUDE_DIR}/boost")
   install(
-        DIRECTORY "${boost_src_SOURCE_DIR}/boost/"
+        DIRECTORY "${NODESEA_BOOST_INCLUDE_DIR}/boost/"
         DESTINATION include/boost
     )
 endif()
 
-file(
-    GLOB BOOST_INCLUDE_DIRS
-    LIST_DIRECTORIES true
-    "${boost_src_SOURCE_DIR}/libs/*/include"
-)
+if(NOT NODESEA_USE_SYSTEM_BOOST STREQUAL "1")
+  file(
+      GLOB BOOST_INCLUDE_DIRS
+      LIST_DIRECTORIES true
+      "${boost_src_SOURCE_DIR}/libs/*/include"
+  )
 
-foreach(BOOST_INCLUDE_DIR IN LISTS BOOST_INCLUDE_DIRS)
-  install(
-        DIRECTORY "${BOOST_INCLUDE_DIR}/"
-        DESTINATION include
-    )
-endforeach()
+  foreach(BOOST_INCLUDE_DIR IN LISTS BOOST_INCLUDE_DIRS)
+    install(
+          DIRECTORY "${BOOST_INCLUDE_DIR}/"
+          DESTINATION include
+      )
+  endforeach()
+endif()
 
 # Use IPO only for CMake's Release configuration. Debug stays free of IPO and
 # extra optimization policy for native build and incremental-development speed.
