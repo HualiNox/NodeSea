@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::{
     fs,
     io::ErrorKind,
@@ -12,6 +13,9 @@ use crate::transport::{Listener, Transport, TransportError};
 const SOCKET_MODE: u32 = 0o600;
 const USER_DIRECTORY_MODE: u32 = 0o700;
 const SYSTEM_DIRECTORY_MODE: u32 = 0o755;
+const DEFAULT_BUFFER_SIZE: usize = 4096;
+const MAX_BUFFER_SIZE: usize = 1 << 20; // 1 MiB
+const BUFFER_GROWTH_STEP: usize = 1024; // 1 KiB
 
 /// Endpoint backed by a Unix domain socket.
 pub struct UnixEndpoint {
@@ -40,30 +44,77 @@ impl UnixEndpoint {
             // trusting HOME, which may be absent or caller-controlled.
             let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
 
-            // A generous fixed buffer handles the usual entry size without
-            // repeated retries and buffer growth.
-            let mut buf = vec![0u8; 4096];
+            // Start with a typical entry size and grow the buffer when
+            // `getpwuid_r` reports that the entry does not fit.
+            let mut buf_len = DEFAULT_BUFFER_SIZE;
             let mut result = std::ptr::null_mut();
-            let buflen = buf.len();
+            let mut rc: i32 = libc::ERANGE; // Initialize to ERANGE to enter the loop
+            let mut buf: Vec<u8>;
 
-            let rc = unsafe {
-                libc::getpwuid_r(euid, &mut pwd, buf.as_mut_ptr().cast(), buflen, &mut result)
-            };
+            while buf_len <= MAX_BUFFER_SIZE {
+                buf = vec![0u8; buf_len];
 
-            // Both conditions are required: a zero return code alone does
-            // not guarantee that a matching passwd entry was found.
-            if rc == 0 && !result.is_null() {
-                let home = unsafe {
-                    use std::ffi::CStr;
-
-                    CStr::from_ptr(pwd.pw_dir)
+                // SAFETY: The `getpwuid_r` function is called with a valid
+                // pointer to a `passwd` struct, a valid pointer to a buffer
+                // of sufficient size, and a valid pointer to a `passwd` pointer.
+                // The buffer is allocated with the specified size, and the
+                // function is called in a loop to handle cases where the buffer is too small.
+                rc = unsafe {
+                    libc::getpwuid_r(
+                        euid,
+                        &mut pwd,
+                        buf.as_mut_ptr().cast(),
+                        buf_len,
+                        &mut result,
+                    )
                 };
 
-                PathBuf::from(home.to_string_lossy().to_string())
-                    .join("Library/Application Support/NodeSea/socket")
-            } else {
+                match rc {
+                    0 => {
+                        if result.is_null() {
+                            return Err(TransportError::MissingHomeDirectory);
+                        }
+                        break;
+                    }
+
+                    libc::ERANGE => {
+                        buf_len += BUFFER_GROWTH_STEP;
+                        continue;
+                    }
+
+                    error => {
+                        tracing::error!(
+                            "Failed to get passwd entry for euid {}: {}",
+                            euid,
+                            std::io::Error::from_raw_os_error(error)
+                        );
+                        return Err(TransportError::MissingHomeDirectory);
+                    }
+                }
+            }
+
+            // If the loop exits due to exceeding MAX_BUFFER_SIZE, return an error
+            if rc == libc::ERANGE {
+                tracing::error!(
+                    "Failed to get passwd entry for euid {}: buffer size exceeded maximum of {} bytes",
+                    euid,
+                    MAX_BUFFER_SIZE
+                );
                 return Err(TransportError::MissingHomeDirectory);
             }
+
+            // Keep the C string view alive only while the backing buffer is
+            // still in scope, and reject entries without a home directory.
+            let home = unsafe {
+                if pwd.pw_dir.is_null() {
+                    return Err(TransportError::MissingHomeDirectory);
+                }
+
+                CStr::from_ptr(pwd.pw_dir)
+            };
+
+            PathBuf::from(home.to_string_lossy().to_string())
+                .join("Library/Application Support/NodeSea/socket")
         };
 
         Ok(Self::new(path))
