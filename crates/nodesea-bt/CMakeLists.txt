@@ -47,6 +47,13 @@ set(BOOST_SKIP_INSTALL_RULES OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(boost_src)
 
+# Help libtorrent's FindBoost locate the headers fetched above instead of
+# relying on host-specific search paths such as /usr/include.
+set(BOOST_ROOT "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(Boost_ROOT "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(Boost_INCLUDE_DIR "${boost_src_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "" FORCE)
+
 # libtorrent
 FetchContent_Declare(
     libtorrent
