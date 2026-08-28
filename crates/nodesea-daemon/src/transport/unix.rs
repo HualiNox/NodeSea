@@ -1,3 +1,5 @@
+//! Unix-domain socket transport implementation.
+
 use std::{
     fs,
     io::ErrorKind,

@@ -1,3 +1,5 @@
+//! Platform-specific helpers for resolving the default endpoint path.
+
 use std::path::PathBuf;
 
 use super::TransportError;

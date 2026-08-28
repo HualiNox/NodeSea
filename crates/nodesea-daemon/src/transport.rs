@@ -1,3 +1,5 @@
+//! Platform transport traits and endpoint implementations.
+
 use tokio::io::{AsyncRead, AsyncWrite};
 
 #[cfg(unix)]

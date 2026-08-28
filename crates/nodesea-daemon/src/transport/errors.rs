@@ -1,3 +1,5 @@
+//! Errors produced by the local daemon transport.
+
 use std::{io, path::PathBuf};
 
 #[derive(Debug, thiserror::Error)]
