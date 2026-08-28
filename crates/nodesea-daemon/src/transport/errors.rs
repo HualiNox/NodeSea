@@ -3,6 +3,24 @@ use std::{io, path::PathBuf};
 #[derive(Debug, thiserror::Error)]
 /// Errors returned while creating or using a local daemon transport.
 pub enum TransportError {
+    /// The user runtime directory is not available for the default endpoint.
+    #[error("user runtime directory is not available for the default transport endpoint")]
+    MissingRuntimeDirectory,
+
+    /// The user's home directory is not available for the default endpoint.
+    #[error("home directory is not available for the default transport endpoint")]
+    MissingHomeDirectory,
+
+    /// Setting permissions on a transport path failed.
+    #[error("failed to set permissions on transport path `{path}`: {source}")]
+    SetPermissions {
+        /// Path whose permissions could not be set.
+        path: PathBuf,
+        /// Underlying filesystem error.
+        #[source]
+        source: io::Error,
+    },
+
     /// Inspecting a transport path failed.
     #[error("failed to inspect transport path `{path}`: {source}")]
     InspectPath {

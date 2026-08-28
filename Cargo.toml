@@ -26,9 +26,6 @@ tokio.workspace = true
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.189"
-
 [[bin]]
 name = "nodesead"
 path = "src/bin/nodesead.rs"

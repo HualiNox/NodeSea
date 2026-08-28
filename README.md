@@ -11,21 +11,30 @@ will host the BitTorrent service.
 cargo run --bin nodesead
 ```
 
-On Linux, `nodesead` is intended to run as a system service and currently
-requires root. Its Unix socket is:
+On Linux, a root service uses the standard Unix socket path:
 
 ```text
-/run/nodesea/nodesead.sock
+/run/nodesea/socket
 ```
 
-Persistent application data will be stored under `/var/lib/nodesea` when the
-database layer is added.
-
-On macOS, the socket is stored at:
+When run as a regular user, the socket is created at:
 
 ```text
-~/Library/Application Support/NodeSea/nodesead.sock
+$XDG_RUNTIME_DIR/nodesea/socket
 ```
+
+Persistent application data will be stored under the user's XDG data or state
+directory when the database layer is added.
+
+On macOS, root services use `/var/run/nodesea/socket`. Regular users use:
+
+```text
+~/Library/Application Support/NodeSea/socket
+```
+
+The daemon creates and manages the socket itself. Homebrew only provides the
+installation and service management; it does not affect socket discovery.
+
 
 ## Workspace crates
 

@@ -1,13 +1,17 @@
 use std::{
     fs,
     io::ErrorKind,
-    os::unix::fs::{FileTypeExt, MetadataExt},
+    os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::PathBuf,
 };
 
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream as TokioUnixStream};
 
 use crate::transport::{Listener, Transport, TransportError};
+
+const SOCKET_MODE: u32 = 0o600;
+const USER_DIRECTORY_MODE: u32 = 0o700;
+const SYSTEM_DIRECTORY_MODE: u32 = 0o755;
 
 /// Endpoint backed by a Unix domain socket.
 pub struct UnixEndpoint {
@@ -20,6 +24,36 @@ impl UnixEndpoint {
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
         Self { path }
+    }
+
+    /// Creates the default endpoint for the current process.
+    ///
+    /// Root uses the platform service path. Other users use the platform's
+    /// standard per-user runtime directory.
+    #[cfg(target_os = "macos")]
+    pub fn default_endpoint() -> Result<Self, TransportError> {
+        let path = if unsafe { libc::geteuid() } == 0 {
+            PathBuf::from("/var/run/nodesea/socket")
+        } else {
+            let home = std::env::var_os("HOME").ok_or(TransportError::MissingHomeDirectory)?;
+            PathBuf::from(home).join("Library/Application Support/NodeSea/socket")
+        };
+
+        Ok(Self::new(path))
+    }
+
+    /// Creates the default endpoint for the current Linux process.
+    #[cfg(target_os = "linux")]
+    pub fn default_endpoint() -> Result<Self, TransportError> {
+        let path = if unsafe { libc::geteuid() } == 0 {
+            PathBuf::from("/run/nodesea/socket")
+        } else {
+            let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+                .ok_or(TransportError::MissingRuntimeDirectory)?;
+            PathBuf::from(runtime_dir).join("nodesea/socket")
+        };
+
+        Ok(Self::new(path))
     }
 }
 
@@ -124,6 +158,7 @@ impl Transport for UnixTransport {
 
         // Ensure the parent directory exists and is a directory
         if let Some(parent) = path.parent() {
+            let mut created_parent = false;
             match fs::metadata(parent) {
                 Ok(metadata) if metadata.is_dir() => {}
                 Ok(_) => {
@@ -147,6 +182,7 @@ impl Transport for UnixTransport {
                             source: error,
                         });
                     }
+                    created_parent = true;
                 }
                 Err(error) => {
                     tracing::error!(
@@ -157,6 +193,25 @@ impl Transport for UnixTransport {
                     return Err(TransportError::InspectPath {
                         path: parent.to_path_buf(),
                         source: error,
+                    });
+                }
+            }
+
+            if created_parent {
+                let mode = if unsafe { libc::geteuid() } == 0 {
+                    SYSTEM_DIRECTORY_MODE
+                } else {
+                    USER_DIRECTORY_MODE
+                };
+                if let Err(source) = fs::set_permissions(parent, fs::Permissions::from_mode(mode)) {
+                    tracing::error!(
+                        "Failed to set permissions on transport directory {}: {}",
+                        parent.display(),
+                        source
+                    );
+                    return Err(TransportError::SetPermissions {
+                        path: parent.to_path_buf(),
+                        source,
                     });
                 }
             }
@@ -270,6 +325,19 @@ impl Transport for UnixTransport {
             }
         };
 
+        if let Err(source) = fs::set_permissions(path, fs::Permissions::from_mode(SOCKET_MODE)) {
+            tracing::error!(
+                "Failed to set permissions on Unix socket {}: {}",
+                path.display(),
+                source
+            );
+            let _ = fs::remove_file(path);
+            return Err(TransportError::SetPermissions {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+
         // Get the device and inode numbers of the newly created socket file
         let current_metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
@@ -319,7 +387,7 @@ mod tests {
         }
 
         fn socket(&self) -> PathBuf {
-            self.0.join("nodesea.sock")
+            self.0.join("socket")
         }
     }
 
@@ -332,13 +400,11 @@ mod tests {
     #[tokio::test]
     async fn bind_creates_missing_parent_directory() {
         let directory = TestDir::new();
-        let socket = directory.0.join("run/nodesea.sock");
+        let socket = directory.0.join("run/socket");
 
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("listener should bind");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
 
         assert!(socket.exists());
         assert!(socket.parent().is_some_and(Path::is_dir));
@@ -349,11 +415,9 @@ mod tests {
     async fn accept_returns_connected_stream() {
         let directory = TestDir::new();
         let socket = directory.socket();
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("listener should bind");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
 
         let client = UnixStream::connect(&socket);
         let (client, server) = tokio::join!(client, listener.accept());
@@ -367,11 +431,9 @@ mod tests {
     async fn cleanup_removes_socket() {
         let directory = TestDir::new();
         let socket = directory.socket();
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("listener should bind");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
 
         listener.cleanup().expect("socket should be removed");
         assert!(!socket.exists());
@@ -383,10 +445,7 @@ mod tests {
         let parent = directory.0.join("not-a-directory");
         fs::write(&parent, b"file").expect("test file should be created");
 
-        let result = UnixTransport::bind(&UnixEndpoint {
-            path: parent.join("nodesea.sock"),
-        })
-        .await;
+        let result = UnixTransport::bind(&UnixEndpoint::new(parent.join("socket"))).await;
 
         assert!(matches!(
             result,
@@ -400,10 +459,7 @@ mod tests {
         let socket = directory.socket();
         fs::write(&socket, b"file").expect("test file should be created");
 
-        let result = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await;
+        let result = UnixTransport::bind(&UnixEndpoint::new(socket.clone())).await;
 
         assert!(matches!(result, Err(TransportError::PathNotSocket { .. })));
     }
@@ -412,16 +468,11 @@ mod tests {
     async fn bind_rejects_active_socket() {
         let directory = TestDir::new();
         let socket = directory.socket();
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("first listener should bind");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("first listener should bind");
 
-        let result = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await;
+        let result = UnixTransport::bind(&UnixEndpoint::new(socket.clone())).await;
 
         assert!(matches!(
             result,
@@ -434,18 +485,14 @@ mod tests {
     async fn bind_replaces_stale_socket() {
         let directory = TestDir::new();
         let socket = directory.socket();
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("first listener should bind");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("first listener should bind");
         drop(listener);
 
-        let listener = UnixTransport::bind(&UnixEndpoint {
-            path: socket.clone(),
-        })
-        .await
-        .expect("stale socket should be replaced");
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("stale socket should be replaced");
 
         listener.cleanup().expect("socket should be cleaned up");
     }
