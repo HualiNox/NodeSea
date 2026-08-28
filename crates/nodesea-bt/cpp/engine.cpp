@@ -74,9 +74,76 @@ Session::Session(SettingsPackPayload const& settings_pack) : impl_(std::make_uni
 
 Session::~Session() = default;
 
+lt::session& Session::native_session() { return *impl_->session_; }
+
+// -----------------------------------------------------------------------------
+// CommandPort Implementation
+// -----------------------------------------------------------------------------
+
+CommandPort::CommandPort(Session& session) : session_(session) {}
+
+CommandPort::~CommandPort() = default;
+
+bool CommandPort::fetch_metadata(const TorrentIdPayload& torrent_id) {
+  return session_.fetch_metadata(torrent_id);
+}
+
+bool CommandPort::cancel_fetch(const TorrentIdPayload& torrent_id) {
+  return session_.cancel_fetch(torrent_id);
+}
+
+bool CommandPort::post_dht_stats() {
+  session_.native_session().post_dht_stats();
+  return true;
+}
+
+bool CommandPort::post_session_stats() {
+  session_.native_session().post_session_stats();
+  return true;
+}
+
+bool CommandPort::post_dht_sample_infohashes(
+    const UdpEndpointPayload& endpoint, const std::array<std::uint8_t, 20>& target) {
+  auto& session = session_.native_session();
+  lt::error_code ec;
+  lt::address endpoint_address = lt::make_address(std::string(endpoint.address), ec);
+  if (ec) {
+    return false;
+  }
+  const lt::udp::endpoint remote(endpoint_address, static_cast<std::uint16_t>(endpoint.port));
+  const lt::sha1_hash target_hash(reinterpret_cast<const char*>(target.data()));
+  session.dht_sample_infohashes(remote, target_hash);
+  return true;
+}
+
+bool CommandPort::post_dht_live_nodes() {
+  auto& session = session_.native_session();
+  lt::session_params state = session.session_state(lt::session_handle::save_dht_state);
+  if (state.dht_state.nids.empty()) return false;
+  for (auto const& [_, nid] : state.dht_state.nids) session.dht_live_nodes(nid);
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+// Native Session Lifecycle
+// -----------------------------------------------------------------------------
+
 std::unique_ptr<Session> start_session(SettingsPackPayload const& settings_pack) {
   return std::make_unique<Session>(settings_pack);
 }
+
+std::uint64_t start_command_port(Session& session) {
+  return reinterpret_cast<std::uint64_t>(new CommandPort(session));
+}
+
+void destroy_command_port(std::uint64_t port) {
+  // The port must be destroyed before Session because it stores a Session&.
+  delete reinterpret_cast<CommandPort*>(port);
+}
+
+// -----------------------------------------------------------------------------
+// Session Event Operations
+// -----------------------------------------------------------------------------
 
 std::size_t Session::poll_events(FfiEventSink& sink) {
   if (!impl_->session_) {
@@ -87,6 +154,10 @@ std::size_t Session::poll_events(FfiEventSink& sink) {
   impl_->session_->pop_alerts(&alerts);
   return dispatch_alerts(alerts, sink, *impl_->session_, impl_->archive_fetches_);
 }
+
+// -----------------------------------------------------------------------------
+// Session Command Operations
+// -----------------------------------------------------------------------------
 
 bool Session::fetch_metadata(const TorrentIdPayload& torrent_id) {
   if (!impl_->session_) {
@@ -135,64 +206,9 @@ bool Session::cancel_fetch(const TorrentIdPayload& torrent_id) {
   return true;
 }
 
-bool Session::post_dht_stats() const {
-  if (!impl_->session_) {
-    return false;
-  }
-
-  impl_->session_->post_dht_stats();
-  return true;
-}
-
-bool Session::post_session_stats() const {
-  if (!impl_->session_) {
-    return false;
-  }
-
-  impl_->session_->post_session_stats();
-  return true;
-}
-
-bool Session::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
-                                         const std::array<std::uint8_t, 20>& target) const {
-  if (!impl_->session_) {
-    return false;
-  }
-
-  // Convert Rust address string to libtorrent address.
-  lt::error_code ec;
-  lt::address endpoint_address = lt::make_address(std::string(endpoint.address), ec);
-  if (ec) {
-    return false;
-  }
-
-  // Create UDP endpoint.
-  const lt::udp::endpoint rp(endpoint_address, static_cast<std::uint16_t>(endpoint.port));
-
-  // Create target hash.
-  const lt::sha1_hash target_hash(reinterpret_cast<const char*>(target.data()));
-
-  impl_->session_->dht_sample_infohashes(rp, target_hash);
-  return true;
-}
-
-bool Session::post_dht_live_nodes() const {
-  if (!impl_->session_) {
-    return false;
-  }
-
-  lt::session_params state = impl_->session_->session_state(lt::session_handle::save_dht_state);
-
-  if (state.dht_state.nids.empty()) {
-    return false;
-  }
-
-  for (auto const& [_, nid] : state.dht_state.nids) {
-    impl_->session_->dht_live_nodes(nid);
-  }
-
-  return true;
-}
+// -----------------------------------------------------------------------------
+// Alert Notification
+// -----------------------------------------------------------------------------
 
 void Session::set_alert_notify(AlertNotifier const& notifier) {
   if (!impl_->session_) {
@@ -214,32 +230,34 @@ void Session::clear_alert_notify() {
 // -----------------------------------------------------------------------------
 
 std::size_t poll_events(Session& session, FfiEventSink& sink) {
+  // Only this path consumes the native alert queue.
   return session.poll_events(sink);
 }
 
-bool fetch_metadata(Session& session, const TorrentIdPayload& torrent_id) {
-  return session.fetch_metadata(torrent_id);
+bool fetch_metadata_from_port(std::uint64_t port, const TorrentIdPayload& torrent_id) {
+  return reinterpret_cast<CommandPort*>(port)->fetch_metadata(torrent_id);
 }
 
-bool cancel_fetch(Session& session, const TorrentIdPayload& torrent_id) {
-  return session.cancel_fetch(torrent_id);
+bool cancel_fetch_from_port(std::uint64_t port, const TorrentIdPayload& torrent_id) {
+  return reinterpret_cast<CommandPort*>(port)->cancel_fetch(torrent_id);
 }
 
-bool post_dht_stats(const Session& session) {
-  return session.post_dht_stats();
+bool post_dht_stats_from_port(std::uint64_t port) {
+  return reinterpret_cast<CommandPort*>(port)->post_dht_stats();
 }
 
-bool post_session_stats(const Session& session) {
-  return session.post_session_stats();
+bool post_session_stats_from_port(std::uint64_t port) {
+  return reinterpret_cast<CommandPort*>(port)->post_session_stats();
 }
 
-bool post_dht_sample_infohashes(const Session& session, const UdpEndpointPayload& endpoint,
-                                const std::array<std::uint8_t, 20>& target) {
-  return session.post_dht_sample_infohashes(endpoint, target);
+bool post_dht_sample_infohashes_from_port(
+    std::uint64_t port, const UdpEndpointPayload& endpoint,
+    const std::array<std::uint8_t, 20>& target) {
+  return reinterpret_cast<CommandPort*>(port)->post_dht_sample_infohashes(endpoint, target);
 }
 
-bool post_dht_live_nodes(const Session& session) {
-  return session.post_dht_live_nodes();
+bool post_dht_live_nodes_from_port(std::uint64_t port) {
+  return reinterpret_cast<CommandPort*>(port)->post_dht_live_nodes();
 }
 
 void set_alert_notify(Session& session, AlertNotifier const& notifier) {

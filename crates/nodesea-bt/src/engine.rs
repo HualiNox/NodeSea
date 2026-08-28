@@ -25,6 +25,8 @@ use crate::engine::{
 
 /// A BitTorrent engine backed by a libtorrent session.
 pub struct Engine {
+    // These values are consumed by `run`; keeping them here allows the public
+    // handle to be created before the runner starts.
     config: EngineConfig,
     extensions: Vec<EngineExtensionBox>,
 
@@ -63,6 +65,8 @@ impl Engine {
         status_tx: watch::Sender<EngineStatus>,
         status_rx: watch::Receiver<EngineStatus>,
     ) -> Self {
+        // The builder owns the channels until `run` transfers the receiver to
+        // EngineRunner.
         Self {
             config,
             extensions,
@@ -77,7 +81,7 @@ impl Engine {
     /// running engine.
     ///
     /// The handle does not own the native session. Commands are executed by
-    /// the task running [`Engine::run`].
+    /// the command worker owned by [`Engine::run`].
     pub fn handle(&self) -> EngineHandle {
         EngineHandle::new(self.command_tx.clone(), self.status_rx.clone())
     }
@@ -90,6 +94,8 @@ impl Engine {
     /// closed, the runner follows the same shutdown path as an explicit
     /// shutdown request.
     pub async fn run(self) -> Result<(), EngineError> {
+        // Extensions move into the event worker and are not called from the
+        // native session runner.
         let runner = EngineRunner::new(
             self.config.settings_pack(),
             EventDispatcher::new(self.extensions),

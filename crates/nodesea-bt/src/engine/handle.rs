@@ -12,7 +12,7 @@ use crate::{
     engine::{errors::EngineError, runner::EngineStatus},
 };
 
-/// A command sent from an [`EngineHandle`] to the engine runner.
+/// A command sent from an [`EngineHandle`] to the command worker.
 pub(crate) enum EngineCommand {
     /// Starts a metadata fetch for a torrent identity.
     FetchMetadata {
@@ -57,14 +57,6 @@ pub(crate) enum EngineCommand {
         /// Completes after the runner clears its native session.
         reply: oneshot::Sender<Result<(), EngineError>>,
     },
-}
-
-/// A control flow signal sent from the engine runner to its task.
-pub(crate) enum ControlFlow {
-    /// Continue processing commands and native alerts.
-    Continue,
-    /// Stop processing commands and enter the shutdown sequence.
-    Shutdown(oneshot::Sender<Result<(), EngineError>>),
 }
 
 /// Sender used by handles to submit commands to the engine runner.

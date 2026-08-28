@@ -114,19 +114,20 @@ mod bridge {
 
         /// Opaque native engine owned by the Rust facade wrapper.
         type Session;
-
         fn start_session(settings_pack: &SettingsPackPayload) -> Result<UniquePtr<Session>>;
+        fn start_command_port(session: Pin<&mut Session>) -> u64;
+        fn destroy_command_port(port: u64);
         fn poll_events(session: Pin<&mut Session>, sink: &mut FfiEventSink) -> usize;
-        fn fetch_metadata(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
-        fn cancel_fetch(session: Pin<&mut Session>, torrent_id: &TorrentIdPayload) -> bool;
-        fn post_dht_stats(session: &Session) -> bool;
-        fn post_session_stats(session: &Session) -> bool;
-        fn post_dht_sample_infohashes(
-            session: &Session,
+        fn fetch_metadata_from_port(port: u64, torrent_id: &TorrentIdPayload) -> bool;
+        fn cancel_fetch_from_port(port: u64, torrent_id: &TorrentIdPayload) -> bool;
+        fn post_dht_stats_from_port(port: u64) -> bool;
+        fn post_session_stats_from_port(port: u64) -> bool;
+        fn post_dht_sample_infohashes_from_port(
+            port: u64,
             endpoint: &UdpEndpointPayload,
             target: &[u8; 20],
         ) -> bool;
-        fn post_dht_live_nodes(session: &Session) -> bool;
+        fn post_dht_live_nodes_from_port(port: u64) -> bool;
     }
 
     extern "Rust" {
@@ -211,48 +212,69 @@ pub(super) fn start_session(settings_pack: SettingsPack) -> Result<Session, Stri
 
 /// Polls native alerts and dispatches them to the supplied domain sink.
 pub(super) fn poll_events<S: EventSink>(session: &mut Session, sink: &mut S) -> usize {
+    // The sink adapter is short-lived for one poll; native alert ownership
+    // stays with the Session wrapper and the runner thread.
     let mut ffi_sink = FfiEventSink::new(sink);
     bridge::poll_events(session.inner.pin_mut(), &mut ffi_sink)
 }
 
-/// Starts metadata fetching for a torrent identity.
-pub(super) fn fetch_metadata(session: &mut Session, torrent_id: &TorrentId) -> bool {
+/// Native command facade token kept alive by the command worker.
+pub(super) struct CommandPort {
+    /// Address of the C++ CommandPort, represented as an opaque FFI token.
+    id: u64,
+}
+
+pub(super) fn start_command_port(session: &mut Session) -> Result<CommandPort, String> {
+    // CXX cannot move the opaque native port into the worker directly, so the
+    // worker owns this token and all calls remain serialized there.
+    let id = bridge::start_command_port(session.inner.pin_mut());
+    if id == 0 {
+        Err("failed to create command port".to_owned())
+    } else {
+        Ok(CommandPort { id })
+    }
+}
+
+impl Drop for CommandPort {
+    fn drop(&mut self) {
+        // Drop is executed by the command worker before the native Session is
+        // released by EngineRunner.
+        bridge::destroy_command_port(self.id);
+    }
+}
+
+pub(super) fn fetch_metadata_from_port(port: &mut CommandPort, torrent_id: &TorrentId) -> bool {
     let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
-    bridge::fetch_metadata(session.inner.pin_mut(), &payload)
+    bridge::fetch_metadata_from_port(port.id, &payload)
 }
 
-/// Cancels metadata fetching for a torrent identity.
-pub(super) fn cancel_fetch(session: &mut Session, torrent_id: &TorrentId) -> bool {
+pub(super) fn cancel_fetch_from_port(port: &mut CommandPort, torrent_id: &TorrentId) -> bool {
     let payload = bridge::TorrentIdPayload::from_torrent_id(torrent_id);
-    bridge::cancel_fetch(session.inner.pin_mut(), &payload)
+    bridge::cancel_fetch_from_port(port.id, &payload)
 }
 
-/// Requests an asynchronous DHT statistics alert.
-pub(super) fn post_dht_stats(session: &Session) -> bool {
-    bridge::post_dht_stats(&session.inner)
+pub(super) fn post_dht_stats_from_port(port: &CommandPort) -> bool {
+    bridge::post_dht_stats_from_port(port.id)
 }
 
-/// Requests an asynchronous session statistics alert.
-pub(super) fn post_session_stats(session: &Session) -> bool {
-    bridge::post_session_stats(&session.inner)
+pub(super) fn post_session_stats_from_port(port: &CommandPort) -> bool {
+    bridge::post_session_stats_from_port(port.id)
 }
 
-/// Requests an asynchronous DHT sample infohashes alert.
-pub(super) fn post_dht_sample_infohashes(
-    session: &Session,
+pub(super) fn post_dht_sample_infohashes_from_port(
+    port: &CommandPort,
     endpoint: &SocketAddr,
     target: &DhtTarget,
 ) -> bool {
-    bridge::post_dht_sample_infohashes(
-        &session.inner,
+    bridge::post_dht_sample_infohashes_from_port(
+        port.id,
         &bridge::UdpEndpointPayload::from_socket_addr(endpoint),
         target.as_bytes(),
     )
 }
 
-/// Requests live nodes from each local DHT routing table.
-pub(super) fn post_dht_live_nodes(session: &Session) -> bool {
-    bridge::post_dht_live_nodes(&session.inner)
+pub(super) fn post_dht_live_nodes_from_port(port: &CommandPort) -> bool {
+    bridge::post_dht_live_nodes_from_port(port.id)
 }
 
 pub(super) fn set_alert_notify(session: &mut Session, notifier: &notifier::AlertNotifier) {

@@ -1,11 +1,15 @@
-//! The single-owner async runtime for a native libtorrent session.
+//! The session runtime and command worker for a native libtorrent session.
+
+use std::thread::{self, JoinHandle};
+
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     SettingsPack,
     engine::{
         dispatcher::EventDispatcher,
         errors::EngineError,
-        handle::{CommandReceiver, ControlFlow, EngineCommand, StatusSender},
+        handle::{CommandReceiver, EngineCommand, StatusSender},
     },
     ffi,
 };
@@ -27,17 +31,114 @@ pub enum EngineStatus {
     Failed,
 }
 
-/// Owns the native session and serializes commands with alert consumption.
+/// Owns the native session and coordinates it with the command worker.
 pub(crate) struct EngineRunner {
     settings_pack: SettingsPack,
     session: Option<ffi::Session>,
     dispatcher: EventDispatcher,
-    command_rx: CommandReceiver,
+    command_rx: Option<CommandReceiver>,
+    shutdown_rx: mpsc::Receiver<ShutdownRequest>,
+    shutdown_tx: mpsc::Sender<ShutdownRequest>,
+    command_worker: Option<CommandWorker>,
 
     status_tx: StatusSender,
 
     // Keeps the notifier address stable while the native callback is registered.
     alert_notifier: Box<ffi::AlertNotifier>,
+}
+
+struct ShutdownRequest {
+    /// Completes the public shutdown request, if one initiated this stop.
+    reply: Option<oneshot::Sender<Result<(), EngineError>>>,
+}
+
+/// Owns the native command port and guarantees that it is destroyed on the
+/// same worker thread that executes command calls.
+struct CommandWorker {
+    stop_tx: Option<oneshot::Sender<()>>,
+    join: Option<JoinHandle<()>>,
+}
+
+impl CommandWorker {
+    /// Starts the command loop on its own OS thread and current-thread runtime.
+    fn spawn(
+        port: ffi::CommandPort,
+        command_rx: CommandReceiver,
+        shutdown_tx: mpsc::Sender<ShutdownRequest>,
+    ) -> Self {
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let join = thread::Builder::new()
+            .name("nodesea-command".to_owned())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("command worker runtime should build");
+                runtime.block_on(command_loop(port, command_rx, shutdown_tx, stop_rx));
+            })
+            .expect("command worker thread should start");
+
+        Self {
+            stop_tx: Some(stop_tx),
+            join: Some(join),
+        }
+    }
+
+    fn stop_and_join(&mut self) {
+        if let Some(stop_tx) = self.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
+/// Serializes all native command calls independently from alert polling.
+async fn command_loop(
+    mut port: ffi::CommandPort,
+    mut command_rx: CommandReceiver,
+    shutdown_tx: mpsc::Sender<ShutdownRequest>,
+    mut stop_rx: oneshot::Receiver<()>,
+) {
+    loop {
+        tokio::select! {
+            command = command_rx.recv() => {
+                let Some(command) = command else {
+                    let _ = shutdown_tx.send(ShutdownRequest { reply: None }).await;
+                    break;
+                };
+
+                match command {
+                    EngineCommand::FetchMetadata { torrent_id, reply } => {
+                        let _ = reply.send(ffi::fetch_metadata_from_port(&mut port, &torrent_id));
+                    }
+                    EngineCommand::CancelFetchMetadata { torrent_id, reply } => {
+                        let _ = reply.send(ffi::cancel_fetch_from_port(&mut port, &torrent_id));
+                    }
+                    EngineCommand::PostDhtStats { reply } => {
+                        let _ = reply.send(ffi::post_dht_stats_from_port(&port));
+                    }
+                    EngineCommand::PostSessionStats { reply } => {
+                        let _ = reply.send(ffi::post_session_stats_from_port(&port));
+                    }
+                    EngineCommand::PostDhtSampleInfohashes { endpoint, target, reply } => {
+                        let _ = reply.send(ffi::post_dht_sample_infohashes_from_port(
+                            &port, &endpoint, &target,
+                        ));
+                    }
+                    EngineCommand::PostDhtLiveNodes { reply } => {
+                        let _ = reply.send(ffi::post_dht_live_nodes_from_port(&port));
+                    }
+                    EngineCommand::Shutdown { reply } => {
+                        let _ = shutdown_tx.send(ShutdownRequest { reply: Some(reply) }).await;
+                        break;
+                    }
+                }
+            }
+            _ = &mut stop_rx => break,
+        }
+    }
 }
 
 impl EngineRunner {
@@ -48,11 +149,15 @@ impl EngineRunner {
         command_rx: CommandReceiver,
         status_tx: StatusSender,
     ) -> Self {
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         Self {
             dispatcher,
             settings_pack,
             session: None,
-            command_rx,
+            command_rx: Some(command_rx),
+            shutdown_rx,
+            shutdown_tx,
+            command_worker: None,
             status_tx,
             alert_notifier: Box::new(ffi::AlertNotifier::new()),
         }
@@ -63,88 +168,47 @@ impl EngineRunner {
             .map_err(EngineError::SessionStartError)?;
         ffi::set_alert_notify(&mut session, self.alert_notifier.as_ref());
         self.session = Some(session);
+
+        // The command receiver is moved into the worker so the runner never
+        // competes with it for command-channel polling.
+        let command_rx = self
+            .command_rx
+            .take()
+            .expect("command receiver should only be taken once");
+        let port = match self
+            .session
+            .as_mut()
+            .map(ffi::start_command_port)
+            .transpose()
+            .map_err(EngineError::SessionStartError)?
+        {
+            Some(port) => port,
+            None => {
+                self.stop_session();
+                return Err(EngineError::SessionStartError(
+                    "session did not start".to_owned(),
+                ));
+            }
+        };
+        self.command_worker = Some(CommandWorker::spawn(
+            port,
+            command_rx,
+            self.shutdown_tx.clone(),
+        ));
         Ok(())
     }
 
-    fn handle_command(&mut self, command: EngineCommand) -> Result<ControlFlow, EngineError> {
-        match command {
-            EngineCommand::PostDhtStats { reply } => {
-                let result = self
-                    .session
-                    .as_ref()
-                    .map(ffi::post_dht_stats)
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::PostSessionStats { reply } => {
-                let result = self
-                    .session
-                    .as_ref()
-                    .map(ffi::post_session_stats)
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::PostDhtLiveNodes { reply } => {
-                let result = self
-                    .session
-                    .as_ref()
-                    .map(ffi::post_dht_live_nodes)
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::FetchMetadata { torrent_id, reply } => {
-                let result = self
-                    .session
-                    .as_mut()
-                    .map(|session| ffi::fetch_metadata(session, &torrent_id))
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::CancelFetchMetadata { torrent_id, reply } => {
-                let result = self
-                    .session
-                    .as_mut()
-                    .map(|session| ffi::cancel_fetch(session, &torrent_id))
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::PostDhtSampleInfohashes {
-                endpoint,
-                target,
-                reply,
-            } => {
-                let result = self
-                    .session
-                    .as_ref()
-                    .map(|session| ffi::post_dht_sample_infohashes(session, &endpoint, &target))
-                    .unwrap_or(false);
-                let _ = reply.send(result);
-
-                Ok(ControlFlow::Continue)
-            }
-
-            EngineCommand::Shutdown { reply } => Ok(ControlFlow::Shutdown(reply)),
+    fn stop_session(&mut self) {
+        // The command worker must already be joined before the native session
+        // is dropped; CommandPort contains a reference to this session.
+        if let Some(mut session) = self.session.take() {
+            ffi::clear_alert_notify(&mut session);
         }
     }
 
-    fn stop_session(&mut self) {
-        if let Some(mut session) = self.session.take() {
-            ffi::clear_alert_notify(&mut session);
+    fn stop_command_worker(&mut self) {
+        if let Some(mut worker) = self.command_worker.take() {
+            worker.stop_and_join();
         }
     }
 
@@ -153,6 +217,8 @@ impl EngineRunner {
             return Err(EngineError::EngineNotRunning);
         };
 
+        // Alert polling remains owned by the runner because the notifier and
+        // native Session are not shared across competing consumers.
         ffi::poll_events(session, &mut self.dispatcher);
 
         Ok(())
@@ -165,7 +231,10 @@ impl EngineRunner {
     async fn shutdown(&mut self) -> Result<(), EngineError> {
         self.send_status(EngineStatus::Stopping);
 
+        // Stop in dependency order: port, session, then queued extensions.
+        self.stop_command_worker();
         self.stop_session();
+        self.dispatcher.shutdown();
 
         self.send_status(EngineStatus::Stopped);
 
@@ -187,27 +256,22 @@ impl EngineRunner {
 
         self.send_status(EngineStatus::Running);
 
-        // The main loop waits for commands and native alerts. A closed command
-        // channel enters the shutdown sequence. An error also enters the
-        // shutdown sequence before the error is returned.
+        // The runner waits for a shutdown request from the command worker and
+        // for native alert notifications. Commands themselves are received
+        // and executed by the dedicated command worker.
         let loop_result = loop {
             let result = tokio::select! {
-                command = self.command_rx.recv() => {
-                    match command {
-                        Some(command) => self.handle_command(command),
-                        None => break Ok(None),
-                    }
+                _ = self.alert_notifier.notified() => {
+                    self.poll_events().map(|_| ())
                 }
 
-                _ = self.alert_notifier.notified() => {
-                    self.poll_events()
-                        .map(|_| ControlFlow::Continue)
+                request = self.shutdown_rx.recv() => {
+                    break Ok(request);
                 }
             };
 
             match result {
-                Ok(ControlFlow::Continue) => {}
-                Ok(ControlFlow::Shutdown(reply)) => break Ok(Some(reply)),
+                Ok(()) => {}
                 Err(error) => break Err(error),
             }
         };
@@ -215,10 +279,10 @@ impl EngineRunner {
         // The loop has exited due to a shutdown command, a closed command
         // channel, or an error.
         match loop_result {
-            Ok(shutdown_reply) => {
+            Ok(shutdown_request) => {
                 let shutdown_result = self.shutdown().await;
 
-                if let Some(reply) = shutdown_reply {
+                if let Some(ShutdownRequest { reply: Some(reply) }) = shutdown_request {
                     let _ = reply.send(shutdown_result.clone());
                 }
 
@@ -235,6 +299,7 @@ impl EngineRunner {
 
 impl Drop for EngineRunner {
     fn drop(&mut self) {
+        self.stop_command_worker();
         self.stop_session();
     }
 }
