@@ -7,6 +7,7 @@
 #include "libtorrent/session_handle.hpp"
 #include "libtorrent/session_params.hpp"
 #include "nodesea_bt/alert_parser.hpp"
+#include "nodesea_bt/fetch_registry.hpp"
 #include "nodesea_bt/helper.hpp"
 #include "src/ffi.rs.h"
 #include "src/ffi/config.rs.h"
@@ -30,7 +31,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -43,7 +43,7 @@ namespace nodesea::bt {
 
 struct Session::Impl {
   std::unique_ptr<lt::session> session_;
-  std::unordered_map<std::string, lt::torrent_handle> archive_fetches_;
+  FetchRegistry archive_fetches_;
 };
 
 Session::Session(SettingsPackPayload const& settings_pack) : impl_(std::make_unique<Impl>()) {
@@ -113,7 +113,9 @@ bool Session::fetch_metadata(const TorrentIdPayload& torrent_id) {
   if (error) {
     return false;
   }
-  impl_->archive_fetches_[torrent_key] = handle;
+  if (!impl_->archive_fetches_.try_insert(std::move(torrent_key), handle)) {
+    return false;
+  }
   return true;
 }
 
@@ -123,13 +125,13 @@ bool Session::cancel_fetch(const TorrentIdPayload& torrent_id) {
   }
 
   std::string torrent_key = torrent_id_key(torrent_id);
-  auto handle_it = impl_->archive_fetches_.find(torrent_key);
-  if (handle_it == impl_->archive_fetches_.end()) {
+  auto handle = impl_->archive_fetches_.find(torrent_key);
+  if (!handle) {
     return false;
   }
 
-  impl_->session_->remove_torrent(handle_it->second, lt::session::delete_files);
-  impl_->archive_fetches_.erase(handle_it);
+  impl_->session_->remove_torrent(*handle, lt::session::delete_files);
+  impl_->archive_fetches_.erase(torrent_key);
   return true;
 }
 
@@ -152,7 +154,7 @@ bool Session::post_session_stats() const {
 }
 
 bool Session::post_dht_sample_infohashes(const UdpEndpointPayload& endpoint,
-                                        const std::array<std::uint8_t, 20>& target) const {
+                                         const std::array<std::uint8_t, 20>& target) const {
   if (!impl_->session_) {
     return false;
   }

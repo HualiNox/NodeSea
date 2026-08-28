@@ -14,17 +14,16 @@
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/info_hash.hpp>
-#include <libtorrent/span.hpp>
 #include <libtorrent/sha1_hash.hpp>
+#include <libtorrent/span.hpp>
 #include <utility>
 
 namespace nodesea::bt {
 
 namespace lt = libtorrent;
 
-std::size_t dispatch_alerts(
-    std::vector<lt::alert*> const& alerts, FfiEventSink& sink, lt::session& session,
-    std::unordered_map<std::string, lt::torrent_handle>& archive_fetches) {
+std::size_t dispatch_alerts(std::vector<lt::alert*> const& alerts, FfiEventSink& sink,
+                            lt::session& session, FetchRegistry& archive_fetches) {
   std::size_t dispatched = 0;
   for (lt::alert* alert : alerts) {
     switch (alert->type()) {
