@@ -5,6 +5,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use bytes::Bytes;
+
 use crate::{DhtInfoHash, DhtNode, NodeId, TorrentId};
 
 /// Direction of a DHT packet (incoming or outgoing).
@@ -86,10 +88,13 @@ event_payload!(
         peer_port: u16,
     }
 );
-event_payload!("Metadata received event payload.", MetadataReceived {
-    torrent_id: TorrentId,
-    data: Vec<u8>,
-});
+event_payload!(
+    "Metadata received event payload.",
+    MetadataReceived {
+        torrent_id: TorrentId,
+        data: Bytes,
+    }
+);
 event_payload!(
     "Metadata failed event payload.",
     MetadataFailed {
@@ -170,11 +175,14 @@ event_payload!("DHT sample infohashes event payload.", DhtSampleInfohashes {
     samples: Vec<DhtInfoHash>,
     nodes: Vec<DhtNode>,
 });
-event_payload!("Raw DHT packet event payload.", DhtPkt {
-    direction: DhtDirection,
-    endpoint: SocketAddr,
-    packet: Vec<u8>,
-});
+event_payload!(
+    "Raw DHT packet event payload.",
+    DhtPkt {
+        direction: DhtDirection,
+        endpoint: SocketAddr,
+        packet: Bytes,
+    }
+);
 event_payload!("DHT live nodes event payload.", DhtLiveNodes {
     local_node_id: NodeId,
     nodes: Vec<DhtNode>,
@@ -251,13 +259,16 @@ event_payload!(
         message: String,
     }
 );
-event_payload!("Read piece event payload.", ReadPiece {
-    torrent_id: TorrentId,
-    piece_index: i32,
-    size: i32,
-    data: Vec<u8>,
-    message: String,
-});
+event_payload!(
+    "Read piece event payload.",
+    ReadPiece {
+        torrent_id: TorrentId,
+        piece_index: i32,
+        size: i32,
+        data: Bytes,
+        message: String,
+    }
+);
 event_payload!(
     "Resume data saved event payload.",
     SaveResumeData {
@@ -373,7 +384,10 @@ mod tests {
                 "10.0.0.1".to_string(),
                 8080,
             )),
-            BtEventKind::MetadataReceived(MetadataReceived::from_ffi(torrent_id, vec![1, 2, 3])),
+            BtEventKind::MetadataReceived(MetadataReceived::from_ffi(
+                torrent_id,
+                vec![1, 2, 3].into(),
+            )),
             BtEventKind::MetadataFailed(MetadataFailed::from_ffi(
                 torrent_id,
                 "fetch failed".to_string(),
@@ -445,7 +459,7 @@ mod tests {
                 torrent_id,
                 4,
                 3,
-                vec![1, 2, 3],
+                vec![1, 2, 3].into(),
                 "piece read".to_string(),
             )),
             BtEventKind::SaveResumeData(SaveResumeData::from_ffi(

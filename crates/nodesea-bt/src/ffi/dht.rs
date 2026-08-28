@@ -211,7 +211,7 @@ impl From<bridge::DhtPktPayload> for BtEvent {
                 _ => unreachable!("invalid DHT direction from C++"),
             },
             value.endpoint.into_socket_addr(),
-            value.packet,
+            bytes::Bytes::from(value.packet),
         )))
     }
 }

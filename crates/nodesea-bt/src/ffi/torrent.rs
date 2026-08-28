@@ -150,7 +150,7 @@ impl From<bridge::MetadataReceivedPayload> for BtEvent {
     fn from(value: bridge::MetadataReceivedPayload) -> Self {
         Self::new(BtEventKind::MetadataReceived(MetadataReceived::from_ffi(
             value.torrent_id.into_torrent_id(),
-            value.data,
+            bytes::Bytes::from(value.data),
         )))
     }
 }
@@ -217,7 +217,7 @@ impl From<bridge::ReadPiecePayload> for BtEvent {
             value.torrent_id.into_torrent_id(),
             value.piece_index,
             value.size,
-            value.data,
+            bytes::Bytes::from(value.data),
             value.message,
         )))
     }
