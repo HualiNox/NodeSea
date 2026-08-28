@@ -32,11 +32,38 @@ impl UnixEndpoint {
     /// standard per-user runtime directory.
     #[cfg(target_os = "macos")]
     pub fn default_endpoint() -> Result<Self, TransportError> {
-        let path = if unsafe { libc::geteuid() } == 0 {
+        let euid = unsafe { libc::geteuid() };
+        let path = if euid == 0 {
             PathBuf::from("/var/run/nodesea/socket")
         } else {
-            let home = std::env::var_os("HOME").ok_or(TransportError::MissingHomeDirectory)?;
-            PathBuf::from(home).join("Library/Application Support/NodeSea/socket")
+            // Resolve the home directory from the effective UID instead of
+            // trusting HOME, which may be absent or caller-controlled.
+            let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+
+            // A generous fixed buffer handles the usual entry size without
+            // repeated retries and buffer growth.
+            let mut buf = vec![0u8; 4096];
+            let mut result = std::ptr::null_mut();
+            let buflen = buf.len();
+
+            let rc = unsafe {
+                libc::getpwuid_r(euid, &mut pwd, buf.as_mut_ptr().cast(), buflen, &mut result)
+            };
+
+            // Both conditions are required: a zero return code alone does
+            // not guarantee that a matching passwd entry was found.
+            if rc == 0 && !result.is_null() {
+                let home = unsafe {
+                    use std::ffi::CStr;
+
+                    CStr::from_ptr(pwd.pw_dir)
+                };
+
+                PathBuf::from(home.to_string_lossy().to_string())
+                    .join("Library/Application Support/NodeSea/socket")
+            } else {
+                return Err(TransportError::MissingHomeDirectory);
+            }
         };
 
         Ok(Self::new(path))
