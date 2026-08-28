@@ -42,6 +42,8 @@ impl UnixEndpoint {
         } else {
             // Resolve the home directory from the effective UID instead of
             // trusting HOME, which may be absent or caller-controlled.
+
+            use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
             let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
 
             // Start with a typical entry size and grow the buffer when
@@ -113,7 +115,7 @@ impl UnixEndpoint {
                 CStr::from_ptr(pwd.pw_dir)
             };
 
-            PathBuf::from(home.to_string_lossy().to_string())
+            PathBuf::from(OsStr::from_bytes(home.to_bytes()))
                 .join("Library/Application Support/NodeSea/socket")
         };
 
