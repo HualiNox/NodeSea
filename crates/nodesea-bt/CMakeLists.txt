@@ -43,7 +43,7 @@ FetchContent_Declare(
 )
 
 set(BOOST_ENABLE_COMPATIBILITY_TARGETS ON CACHE BOOL "" FORCE)
-set(BOOST_SKIP_INSTALL_RULES OFF CACHE BOOL "" FORCE)
+set(BOOST_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(boost_src)
 
@@ -65,6 +65,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(libtorrent)
 
 # Install boost headers
+if(EXISTS "${boost_src_SOURCE_DIR}/boost")
+  install(
+        DIRECTORY "${boost_src_SOURCE_DIR}/boost/"
+        DESTINATION include/boost
+    )
+endif()
+
 file(
     GLOB BOOST_INCLUDE_DIRS
     LIST_DIRECTORIES true
