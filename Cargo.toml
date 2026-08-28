@@ -7,7 +7,7 @@ authors = ["HualiNox"]
 
 [workspace]
 resolver = "2"
-members = ["crates/nodesea-bt"]
+members = ["crates/nodesea-bt", "crates/nodesea-daemon"]
 
 [workspace.package]
 version = "0.0.1"

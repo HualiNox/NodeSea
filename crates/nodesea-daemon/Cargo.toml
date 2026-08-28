@@ -1,0 +1,13 @@
+[package]
+name = "nodesea-daemon"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = "2.0.20"
+tokio.workspace = true
+tracing = "0.1.44"
+tracing-os-layer = "0.2.1"
+tracing-subscriber = "0.3.23"
