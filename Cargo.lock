@@ -328,6 +328,13 @@ dependencies = [
 [[package]]
 name = "nodesea"
 version = "0.0.1"
+dependencies = [
+ "libc",
+ "nodesea-daemon",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "nodesea-bt"
