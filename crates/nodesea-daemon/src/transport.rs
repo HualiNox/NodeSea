@@ -3,6 +3,9 @@ use tokio::io::{AsyncRead, AsyncWrite};
 #[cfg(unix)]
 mod unix;
 
+#[cfg(unix)]
+mod helper;
+
 mod errors;
 
 pub use errors::TransportError;
