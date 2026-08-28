@@ -4,8 +4,11 @@ use std::path::PathBuf;
 
 use super::TransportError;
 
+#[cfg(target_os = "macos")]
 const DEFAULT_BUFFER_SIZE: usize = 4096;
+#[cfg(target_os = "macos")]
 const MAX_BUFFER_SIZE: usize = 1 << 20; // 1 MiB
+#[cfg(target_os = "macos")]
 const BUFFER_GROWTH_STEP: usize = 1024; // 1 KiB
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]

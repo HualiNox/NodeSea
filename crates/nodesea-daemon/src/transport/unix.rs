@@ -29,8 +29,8 @@ impl UnixEndpoint {
 
     /// Creates the default endpoint for the current process.
     ///
-    /// Root uses the platform service path. Other users use the platform's
-    /// standard per-user runtime directory.
+    /// Root uses the platform service path. Other users use the platform-specific
+    /// per-user endpoint path.
     #[cfg(target_os = "macos")]
     pub fn default_endpoint() -> Result<Self, TransportError> {
         let euid = unsafe { libc::geteuid() };
