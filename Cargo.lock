@@ -277,6 +277,7 @@ name = "nodesea-daemon"
 version = "0.0.1"
 dependencies = [
  "libc",
+ "nodesea-bt",
  "thiserror",
  "tokio",
  "tracing",

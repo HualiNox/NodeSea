@@ -27,6 +27,10 @@ impl UnixEndpoint {
         Self { path }
     }
 
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
     /// Creates the default endpoint for the current process.
     ///
     /// Root uses the platform service path. Other users use the platform-specific
