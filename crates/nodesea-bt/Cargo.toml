@@ -12,7 +12,7 @@ tokio.workspace = true
 bitflags = "2.13.1"
 cxx = "1.0.199"
 hex = "0.4.3"
-thiserror = "2.0.20"
+thiserror.workspace = true
 bytes = "1.12.1"
 
 [build-dependencies]
