@@ -1,0 +1,34 @@
+/**
+ * Engine status service protocol buffer definitions.
+ *
+ * This file defines the gRPC service and messages for querying the
+ * current status of the engine.
+ */
+syntax = "proto3";
+
+package nodesea.v1;
+
+// Service for querying engine status
+service EngineStatusService {
+  // Get the current status of the engine
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+// Request message for getting engine status
+message GetStatusRequest {}
+
+// Response message containing the current engine status
+message GetStatusResponse {
+  EngineStatus status = 1;
+}
+
+// Enumeration of possible engine statuses
+enum EngineStatus {
+  ENGINE_STATUS_UNSPECIFIED = 0;
+  ENGINE_STATUS_IDLE = 1;
+  ENGINE_STATUS_STARTING = 2;
+  ENGINE_STATUS_RUNNING = 3;
+  ENGINE_STATUS_STOPPING = 4;
+  ENGINE_STATUS_STOPPED = 5;
+  ENGINE_STATUS_FAILED = 6;
+}

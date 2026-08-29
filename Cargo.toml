@@ -8,7 +8,13 @@ readme = "README.md"
 
 [workspace]
 resolver = "2"
-members = ["crates/nodesea-bt", "crates/nodesea-daemon"]
+members = [
+    "crates/nodesea-bt",
+    "crates/nodesea-cli",
+    "crates/nodesea-daemon",
+    "crates/nodesea-proto",
+    "crates/helper",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -19,9 +25,16 @@ edition = "2024"
 [workspace.dependencies]
 nodesea-daemon = { path = "crates/nodesea-daemon" }
 nodesea-bt = { path = "crates/nodesea-bt" }
+nodesea-proto = { path = "crates/nodesea-proto" }
+nodesea-helper = { path = "crates/helper" }
 anyhow = "1"
+hyper-util = { version = "0.1.20", features = ["tokio"] }
 tokio = { version = "1.53.1", features = ["full"] }
+tokio-stream = { version = "0.1.19", features = ["net"] }
 thiserror = "2.0.20"
+prost = "0.14.4"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
 
 [dependencies]
 nodesea-daemon.workspace = true

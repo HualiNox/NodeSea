@@ -1,0 +1,13 @@
+[package]
+name = "nodesea-helper"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing = "0.1.44"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
