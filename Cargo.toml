@@ -28,6 +28,7 @@ nodesea-bt = { path = "crates/nodesea-bt" }
 nodesea-proto = { path = "crates/nodesea-proto" }
 nodesea-helper = { path = "crates/helper" }
 anyhow = "1"
+clap = { version = "4.6.6", features = ["derive", "env"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-stream = { version = "0.1.19", features = ["net"] }
@@ -35,12 +36,20 @@ thiserror = "2.0.20"
 prost = "0.14.4"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
+tracing = "0.1.44"
 
 [dependencies]
+nodesea-cli = { path = "crates/nodesea-cli" }
 nodesea-daemon.workspace = true
+anyhow.workspace = true
+clap.workspace = true
 tokio.workspace = true
-tracing = "0.1.44"
+tracing.workspace = true
 tracing-subscriber = "0.3.23"
+
+[[bin]]
+name = "nodesea"
+path = "src/bin/nodesea.rs"
 
 [[bin]]
 name = "nodesead"

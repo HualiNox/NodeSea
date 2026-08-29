@@ -1,0 +1,12 @@
+# English translations for the NodeSea CLI.
+error:
+  daemon_not_found: "NodeSea daemon not found.\nSocket: %{socket}"
+status:
+  label: "Engine status"
+  idle: "Idle"
+  starting: "Starting"
+  running: "Running"
+  stopping: "Stopping"
+  stopped: "Stopped"
+  failed: "Failed"
+  unspecified: "Unspecified"

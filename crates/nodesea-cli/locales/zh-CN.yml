@@ -1,0 +1,12 @@
+# Simplified Chinese translations for the NodeSea CLI.
+error:
+  daemon_not_found: "未找到 NodeSea daemon。\nSocket：%{socket}"
+status:
+  label: "引擎状态"
+  idle: "空闲"
+  starting: "启动中"
+  running: "运行中"
+  stopping: "停止中"
+  stopped: "已停止"
+  failed: "失败"
+  unspecified: "未指定"

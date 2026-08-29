@@ -1,19 +1,18 @@
 [package]
-name = "nodesea-daemon"
+name = "nodesea-cli"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
 
 [dependencies]
-thiserror.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-nodesea-bt.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+hyper-util.workspace = true
 nodesea-proto.workspace = true
 nodesea-helper.workspace = true
+rust-i18n = "4.2.1"
+sys-locale = "0.3.2"
+tokio.workspace = true
 tonic.workspace = true
-tracing.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2.189"
+tower = "0.5.3"
