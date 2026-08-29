@@ -1,10 +1,12 @@
 //! Daemon composition and lifecycle management.
 
 use nodesea_bt::{Engine, SettingsPack};
+use nodesea_proto::v1::engine_status_service_server::EngineStatusServiceServer;
 use tokio::task::JoinHandle;
 
 use crate::{
     DaemonError, Endpoint,
+    engine::EngineStatusServiceImpl,
     transport::{Listener, PlatformTransport, Transport},
 };
 
@@ -31,11 +33,14 @@ async fn run_local() -> Result<(), DaemonError> {
     // The handle is cloneable and does not own the native session. The engine
     // itself is moved into the local task and lives until `run` completes.
     let engine_handle = engine.handle();
+
+    let service = EngineStatusServiceImpl::new(engine_handle.clone());
+
     let mut engine_task: JoinHandle<Result<(), nodesea_bt::EngineError>> =
         tokio::task::spawn_local(engine.run());
 
     tokio::select! {
-        daemon_result = daemon.run() => {
+        daemon_result = daemon.run(service) => {
             // If the daemon loop exits first, stop the engine explicitly and
             // wait for its task before returning from the composition layer.
             let shutdown_result = engine_handle.shutdown().await;
@@ -62,25 +67,35 @@ fn build_engine() -> Engine {
 }
 
 struct Daemon {
-    listener: <PlatformTransport as Transport>::Listener,
+    listener: Option<<PlatformTransport as Transport>::Listener>,
 }
 
 impl Daemon {
     async fn bind(endpoint: Endpoint) -> Result<Self, DaemonError> {
         let listener = PlatformTransport::bind(&endpoint).await?;
-        Ok(Self { listener })
+        Ok(Self {
+            listener: Some(listener),
+        })
     }
 
-    async fn run(&self) -> Result<(), DaemonError> {
-        loop {
-            let _stream = self.listener.accept().await?;
-        }
+    async fn run(mut self, service: EngineStatusServiceImpl) -> Result<(), DaemonError> {
+        let listener = self.listener.take().expect("daemon listener must exist");
+
+        let incoming = listener.into_incoming();
+
+        tonic::transport::Server::builder()
+            .add_service(EngineStatusServiceServer::new(service))
+            .serve_with_incoming(incoming)
+            .await
+            .map_err(DaemonError::Grpc)
     }
 }
 
 impl Drop for Daemon {
     fn drop(&mut self) {
-        if let Err(error) = self.listener.cleanup() {
+        if let Some(listener) = self.listener.as_ref()
+            && let Err(error) = listener.cleanup()
+        {
             tracing::error!(%error, "Failed to clean up the daemon transport");
         }
     }

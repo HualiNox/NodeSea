@@ -8,7 +8,11 @@ edition.workspace = true
 [dependencies]
 thiserror.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
 nodesea-bt.workspace = true
+nodesea-proto.workspace = true
+nodesea-helper.workspace = true
+tonic.workspace = true
 tracing = "0.1.44"
 
 [target.'cfg(unix)'.dependencies]

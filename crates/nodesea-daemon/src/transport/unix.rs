@@ -2,10 +2,12 @@
 
 use std::{
     fs,
-    io::ErrorKind,
+    io::{self, ErrorKind},
     os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
     path::PathBuf,
+    pin::Pin,
 };
+use tokio_stream::{Stream, wrappers::UnixListenerStream};
 
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream as TokioUnixStream};
 
@@ -37,12 +39,7 @@ impl UnixEndpoint {
     /// per-user endpoint path.
     #[cfg(target_os = "macos")]
     pub fn default_endpoint() -> Result<Self, TransportError> {
-        let euid = unsafe { libc::geteuid() };
-        let path = if euid == 0 {
-            PathBuf::from("/var/run/nodesea/socket")
-        } else {
-            super::helper::current_user_endpoint_path()?
-        };
+        let path = nodesea_helper::default_socket_path()?;
 
         Ok(Self::new(path))
     }
@@ -50,11 +47,7 @@ impl UnixEndpoint {
     /// Creates the default endpoint for the current Linux process.
     #[cfg(target_os = "linux")]
     pub fn default_endpoint() -> Result<Self, TransportError> {
-        let path = if unsafe { libc::geteuid() } == 0 {
-            PathBuf::from("/run/nodesea/socket")
-        } else {
-            super::helper::current_user_endpoint_path()?
-        };
+        let path = nodesea_helper::default_socket_path()?;
 
         Ok(Self::new(path))
     }
@@ -69,86 +62,59 @@ pub(crate) struct UnixListener {
     inode: u64,
 }
 
-impl Listener for UnixListener {
-    type Stream = TokioUnixStream;
+/// Incoming Unix socket connections and the cleanup guard for their endpoint.
+pub(crate) struct UnixIncoming {
+    inner: UnixListenerStream,
+    _cleanup: UnixCleanup,
+}
 
-    async fn accept(&self) -> Result<Self::Stream, TransportError> {
-        match self.socket.accept().await {
-            Ok((stream, _)) => Ok(stream),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to accept connection on Unix socket {}: {}",
-                    self.path.display(),
-                    e
-                );
-                Err(TransportError::Accept {
-                    path: self.path.clone(),
-                    source: e,
-                })
-            }
+struct UnixCleanup {
+    path: PathBuf,
+    device: u64,
+    inode: u64,
+}
+
+impl Drop for UnixCleanup {
+    /// Remove only the socket inode that this listener created.
+    fn drop(&mut self) {
+        if let Err(error) = cleanup_socket(&self.path, self.device, self.inode) {
+            tracing::error!(
+                %error,
+                "Failed to clean up the daemon transport"
+            );
         }
     }
+}
+
+impl Stream for UnixIncoming {
+    type Item = io::Result<TokioUnixStream>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.inner).poll_next(cx)
+    }
+}
+
+impl Listener for UnixListener {
+    type Stream = TokioUnixStream;
+    type Incoming = UnixIncoming;
 
     fn cleanup(&self) -> Result<(), TransportError> {
-        // Check if the socket file exists
-        let metadata = match fs::symlink_metadata(&self.path) {
-            Ok(metadata) => metadata,
-            Err(e) => {
-                if e.kind() != ErrorKind::NotFound {
-                    tracing::error!(
-                        "Failed to get metadata for path {}: {}",
-                        self.path.display(),
-                        e
-                    );
-                    return Err(TransportError::InspectPath {
-                        path: self.path.clone(),
-                        source: e,
-                    });
-                } else {
-                    // If the file does not exist, we consider it already cleaned up
-                    return Ok(());
-                }
-            }
-        };
+        cleanup_socket(&self.path, self.device, self.inode)
+    }
 
-        // Check if the socket file is the same as the one created by this listener
-        if metadata.dev() != self.device || metadata.ino() != self.inode {
-            tracing::error!(
-                "Socket file {} is not the same as the one created by this listener, device and inode numbers do not match",
-                self.path.display()
-            );
-            return Err(TransportError::SocketPathChanged {
+    fn into_incoming(self) -> Self::Incoming {
+        UnixIncoming {
+            inner: UnixListenerStream::new(self.socket),
+            _cleanup: UnixCleanup {
+                device: self.device,
+                inode: self.inode,
                 path: self.path.clone(),
-            });
+            },
         }
-
-        // Check if the socket file is a Unix socket
-        if !metadata.file_type().is_socket() {
-            tracing::error!(
-                "Path {} is not a Unix socket, expecting a socket for Unix transport",
-                self.path.display()
-            );
-            return Err(TransportError::PathNotSocket {
-                path: self.path.clone(),
-            });
-        }
-
-        // Remove the socket file
-        if let Err(e) = fs::remove_file(&self.path)
-            && e.kind() != ErrorKind::NotFound
-        {
-            tracing::error!(
-                "Failed to remove socket file {}: {}",
-                self.path.display(),
-                e
-            );
-            return Err(TransportError::RemoveSocket {
-                path: self.path.clone(),
-                source: e,
-            });
-        }
-
-        Ok(())
     }
 }
 
@@ -362,6 +328,56 @@ impl Transport for UnixTransport {
     }
 }
 
+fn cleanup_socket(path: &PathBuf, device: u64, inode: u64) -> Result<(), TransportError> {
+    // Check if the socket file exists
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            if e.kind() != ErrorKind::NotFound {
+                tracing::error!("Failed to get metadata for path {}: {}", path.display(), e);
+                return Err(TransportError::InspectPath {
+                    path: path.clone(),
+                    source: e,
+                });
+            } else {
+                // If the file does not exist, we consider it already cleaned up
+                return Ok(());
+            }
+        }
+    };
+
+    // Check if the socket file is the same as the one created by this listener
+    if metadata.dev() != device || metadata.ino() != inode {
+        tracing::error!(
+            "Socket file {} is not the same as the one created by this listener, device and inode numbers do not match",
+            path.display()
+        );
+        return Err(TransportError::SocketPathChanged { path: path.clone() });
+    }
+
+    // Check if the socket file is a Unix socket
+    if !metadata.file_type().is_socket() {
+        tracing::error!(
+            "Path {} is not a Unix socket, expecting a socket for Unix transport",
+            path.display()
+        );
+        return Err(TransportError::PathNotSocket { path: path.clone() });
+    }
+
+    // Remove the socket file
+    if let Err(e) = fs::remove_file(path)
+        && e.kind() != ErrorKind::NotFound
+    {
+        tracing::error!("Failed to remove socket file {}: {}", path.display(), e);
+        return Err(TransportError::RemoveSocket {
+            path: path.clone(),
+            source: e,
+        });
+    }
+
+    Ok(())
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use std::{
@@ -369,8 +385,6 @@ mod tests {
         path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
     };
-
-    use tokio::net::UnixStream;
 
     use super::*;
 
@@ -415,22 +429,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accept_returns_connected_stream() {
-        let directory = TestDir::new();
-        let socket = directory.socket();
-        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
-            .await
-            .expect("listener should bind");
-
-        let client = UnixStream::connect(&socket);
-        let (client, server) = tokio::join!(client, listener.accept());
-
-        assert!(client.is_ok());
-        assert!(server.is_ok());
-        listener.cleanup().expect("socket should be cleaned up");
-    }
-
-    #[tokio::test]
     async fn cleanup_removes_socket() {
         let directory = TestDir::new();
         let socket = directory.socket();
@@ -440,6 +438,76 @@ mod tests {
 
         listener.cleanup().expect("socket should be removed");
         assert!(!socket.exists());
+    }
+
+    #[tokio::test]
+    async fn cleanup_is_idempotent_when_socket_is_already_gone() {
+        let directory = TestDir::new();
+        let socket = directory.socket();
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
+
+        listener.cleanup().expect("first cleanup should succeed");
+        listener
+            .cleanup()
+            .expect("cleanup should tolerate a removed socket");
+    }
+
+    #[tokio::test]
+    async fn cleanup_rejects_a_replaced_socket_path() {
+        let directory = TestDir::new();
+        let socket = directory.socket();
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
+
+        fs::remove_file(&socket).expect("test should remove the original socket");
+        fs::write(&socket, b"replacement").expect("test replacement should be created");
+
+        assert!(matches!(
+            listener.cleanup(),
+            Err(TransportError::SocketPathChanged { .. })
+        ));
+        fs::remove_file(socket).expect("test replacement should be removed");
+    }
+
+    #[tokio::test]
+    async fn incoming_drop_removes_socket() {
+        let directory = TestDir::new();
+        let socket = directory.socket();
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
+
+        let incoming = listener.into_incoming();
+        assert!(socket.exists());
+        drop(incoming);
+        assert!(!socket.exists());
+    }
+
+    #[tokio::test]
+    async fn incoming_yields_connected_stream() {
+        use tokio::net::UnixStream;
+        use tokio_stream::StreamExt;
+
+        let directory = TestDir::new();
+        let socket = directory.socket();
+        let listener = UnixTransport::bind(&UnixEndpoint::new(socket.clone()))
+            .await
+            .expect("listener should bind");
+        let mut incoming = listener.into_incoming();
+
+        let client = UnixStream::connect(&socket);
+        let accepted = tokio::time::timeout(std::time::Duration::from_secs(1), incoming.next());
+        let (client, server) = tokio::join!(client, accepted);
+
+        assert!(client.is_ok());
+        assert!(
+            server
+                .expect("accept should not time out")
+                .is_some_and(|result| result.is_ok())
+        );
     }
 
     #[tokio::test]

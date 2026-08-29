@@ -2,16 +2,14 @@
 
 use std::{io, path::PathBuf};
 
+use nodesea_helper::HelperError;
+
 #[derive(Debug, thiserror::Error)]
 /// Errors returned while creating or using a local daemon transport.
 pub enum TransportError {
-    /// The user runtime directory is not available for the default endpoint.
-    #[error("user runtime directory is not available for the default transport endpoint")]
-    MissingRuntimeDirectory,
-
-    /// The user's home directory is not available for the default endpoint.
-    #[error("home directory is not available for the default transport endpoint")]
-    MissingHomeDirectory,
+    /// Resolving the default endpoint path failed.
+    #[error(transparent)]
+    Helper(#[from] HelperError),
 
     /// Setting permissions on a transport path failed.
     #[error("failed to set permissions on transport path `{path}`: {source}")]
@@ -89,16 +87,6 @@ pub enum TransportError {
         /// Socket path that could not be bound.
         path: PathBuf,
         /// Underlying bind error.
-        #[source]
-        source: io::Error,
-    },
-
-    /// Accepting a client connection failed.
-    #[error("failed to accept a transport connection on `{path}`: {source}")]
-    Accept {
-        /// Listener path that could not accept a connection.
-        path: PathBuf,
-        /// Underlying accept error.
         #[source]
         source: io::Error,
     },

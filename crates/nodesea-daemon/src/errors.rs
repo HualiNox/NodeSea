@@ -16,4 +16,8 @@ pub enum DaemonError {
     /// The local engine task could not be joined.
     #[error("engine task failed: {0}")]
     EngineTask(#[from] tokio::task::JoinError),
+
+    /// The gRPC server failed to start or run.
+    #[error("gRPC server failed: {0}")]
+    Grpc(#[source] tonic::transport::Error),
 }
