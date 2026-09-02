@@ -2,7 +2,7 @@
 error:
   daemon_not_found: "NodeSea daemon not found.\nSocket: %{socket}"
 status:
-  label: "Engine status"
+  label: "NodeSea Engine status"
   idle: "Idle"
   starting: "Starting"
   running: "Running"

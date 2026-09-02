@@ -1,5 +1,6 @@
 //! Implementations of user-facing CLI commands.
 
+mod helper;
 mod status;
 
 use anyhow::Result;
@@ -8,6 +9,8 @@ use crate::{
     DaemonClient,
     cli::{Command, OutputFormat},
 };
+
+pub(crate) use helper::color_enabled;
 
 /// Dispatches a parsed command to its command-specific implementation.
 pub async fn run(client: &mut DaemonClient, command: Command, output: OutputFormat) -> Result<()> {

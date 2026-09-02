@@ -2,7 +2,7 @@
 error:
   daemon_not_found: "未找到 NodeSea daemon。\nSocket：%{socket}"
 status:
-  label: "引擎状态"
+  label: "NodeSea Engine 状态"
   idle: "空闲"
   starting: "启动中"
   running: "运行中"
